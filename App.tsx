@@ -1,8 +1,3 @@
-/**
- * MPESA Transaction Analyzer
- * Personal Finance Tracking App
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
@@ -85,9 +80,9 @@ const App = (): React.JSX.Element => {
   const loadTransactions = (): void => {
     if (Platform.OS === 'android') {
       const filter = {
-        box: 'inbox', // 'inbox' (default), 'sent', 'draft', 'outbox', 'failed', 'queued', and '' for all
-        indexFrom: 0, // start from index 0
-        maxCount: 1000, // count of SMS to return each time
+        box: 'inbox',
+        indexFrom: 0, 
+        maxCount: 1000,
       };
 
       SmsAndroid.list(
@@ -98,7 +93,6 @@ const App = (): React.JSX.Element => {
         (count: number, smsList: string) => {
           const messages: SMSMessage[] = JSON.parse(smsList);
 
-          // Filter only MPESA messages
           const mpesaMessages = messages.filter(
             msg => msg.address && msg.address.toUpperCase().includes('MPESA')
           );

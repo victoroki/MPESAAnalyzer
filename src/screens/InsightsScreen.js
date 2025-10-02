@@ -8,7 +8,6 @@ const InsightsScreen = ({transactions}) => {
 
     const insights = [];
     
-    // Calculate spending statistics
     const spending = transactions
       .filter(t => t.type === 'sent' || t.type === 'payment' || t.type === 'withdrawal')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -17,7 +16,6 @@ const InsightsScreen = ({transactions}) => {
       .filter(t => t.type === 'received')
       .reduce((sum, t) => sum + t.amount, 0);
 
-    // Category analysis
     const categorySpending = {};
     transactions
       .filter(t => t.type !== 'received')
@@ -28,10 +26,8 @@ const InsightsScreen = ({transactions}) => {
     const topCategory = Object.entries(categorySpending)
       .sort((a, b) => b[1] - a[1])[0];
 
-    // Average transaction
     const avgTransaction = spending / transactions.filter(t => t.type !== 'received').length || 0;
 
-    // Most frequent sender
     const senders = {};
     transactions
       .filter(t => t.type === 'received' && t.sender)
@@ -40,7 +36,6 @@ const InsightsScreen = ({transactions}) => {
       });
     const topSender = Object.entries(senders).sort((a, b) => b[1] - a[1])[0];
 
-    // Most frequent recipient
     const recipients = {};
     transactions
       .filter(t => (t.type === 'sent' || t.type === 'payment') && t.recipient)
@@ -49,7 +44,6 @@ const InsightsScreen = ({transactions}) => {
       });
     const topRecipient = Object.entries(recipients).sort((a, b) => b[1] - a[1])[0];
 
-    // Generate insights
     if (income > spending) {
       insights.push({
         type: 'positive',

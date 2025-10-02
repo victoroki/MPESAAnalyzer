@@ -11,7 +11,7 @@ import {LineChart, BarChart} from 'react-native-chart-kit';
 import {format, subDays, startOfDay, endOfDay} from 'date-fns';
 
 const AnalyticsScreen = ({transactions}) => {
-  const [period, setPeriod] = useState('week'); // week, month, year
+  const [period, setPeriod] = useState('week'); 
 
   const getPeriodData = () => {
     const now = new Date();
