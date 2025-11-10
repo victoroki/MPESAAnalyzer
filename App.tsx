@@ -1,23 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  PermissionsAndroid,
-  Platform,
-  Alert,
   View,
   Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
 } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import DashboardScreen from './src/screens/DashboardScreen';
-import TransactionsScreen from './src/screens/TransactionsScreen';
-import AnalyticsScreen from './src/screens/AnalyticsScreen';
-import InsightsScreen from './src/screens/InsightsScreen';
-import SmsAndroid from 'react-native-get-sms-android';
+import Svg, { Path } from 'react-native-svg';
+import { LoadingProvider } from './src/contexts/LoadingContext';
 
 interface Transaction {
   id: string;
@@ -33,530 +24,624 @@ interface Transaction {
   phoneNumber?: string;
 }
 
-interface SMSMessage {
-  _id: string;
-  body: string;
-  date: string;
-  address: string;
+interface Props {
+  transactions: Transaction[];
+  selectedMonth: Date;
+  setSelectedMonth: (date: Date) => void;
 }
 
-// Custom Icon Components using SVG-like styling
-const HomeIcon = ({ color, size }: { color: string; size: number }) => (
-  <View style={[styles.iconContainer, { width: size, height: size }]}>
-    <View style={[styles.homeIcon, { borderColor: color, borderWidth: 2.5 }]} />
-    <View style={[styles.homeIconRoof, { borderTopColor: color, borderTopWidth: 2.5 }]} />
-  </View>
+const { width } = Dimensions.get('window');
+
+// Simple arrow icons
+const ChevronLeft = ({ color }: { color: string }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M15 18l-6-6 6-6"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
 );
 
-const ListIcon = ({ color, size }: { color: string; size: number }) => (
-  <View style={[styles.iconContainer, { width: size, height: size }]}>
-    <View style={[styles.listLine, { backgroundColor: color, width: size * 0.7 }]} />
-    <View style={[styles.listLine, { backgroundColor: color, width: size * 0.7 }]} />
-    <View style={[styles.listLine, { backgroundColor: color, width: size * 0.7 }]} />
-  </View>
+const ChevronRight = ({ color }: { color: string }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M9 18l6-6-6-6"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
 );
 
-const ChartIcon = ({ color, size }: { color: string; size: number }) => (
-  <View style={[styles.iconContainer, { width: size, height: size }]}>
-    <View style={[styles.chartBar, { backgroundColor: color, height: size * 0.4 }]} />
-    <View style={[styles.chartBar, { backgroundColor: color, height: size * 0.7 }]} />
-    <View style={[styles.chartBar, { backgroundColor: color, height: size * 0.5 }]} />
-  </View>
-);
+const DashboardScreen: React.FC<Props> = ({ transactions, selectedMonth, setSelectedMonth }) => {
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
-const BulbIcon = ({ color, size }: { color: string; size: number }) => (
-  <View style={[styles.iconContainer, { width: size, height: size }]}>
-    <View style={[styles.bulb, { 
-      borderColor: color, 
-      borderWidth: 2.5,
-      width: size * 0.6,
-      height: size * 0.6 
-    }]} />
-    <View style={[styles.bulbBase, { backgroundColor: color, width: size * 0.3 }]} />
-  </View>
-);
-
-const Tab = createBottomTabNavigator();
-
-const App = (): React.JSX.Element => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hasPermission, setHasPermission] = useState<boolean>(false);
-
-  useEffect(() => {
-    requestSMSPermission();
-  }, []);
-
-  const requestSMSPermission = async (): Promise<void> => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_SMS,
-          {
-            title: 'SMS Permission',
-            message:
-              'This app needs access to your SMS to analyze MPESA transactions',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          },
-        );
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          setHasPermission(true);
-          loadTransactions();
-        } else {
-          Alert.alert(
-            'Permission Denied',
-            'SMS permission is required to analyze transactions',
-          );
-        }
-      } catch (err) {
-        console.warn(err);
-      }
-    }
-  };
-
-  const loadTransactions = (): void => {
-    if (Platform.OS === 'android') {
-      const filter = {
-        box: 'inbox',
-        indexFrom: 0,
-        maxCount: 5000,
-      };
-
-      SmsAndroid.list(
-        JSON.stringify(filter),
-        (fail: string) => {
-          console.log('Failed to load SMS:', fail);
-        },
-        (count: number, smsList: string) => {
-          const messages: SMSMessage[] = JSON.parse(smsList);
-
-          const mpesaMessages = messages.filter(
-            msg =>
-              msg.address &&
-              (msg.address.toUpperCase().includes('MPESA') ||
-                msg.address.includes('M-PESA'))
-          );
-
-          console.log(`Found ${mpesaMessages.length} MPESA messages`);
-
-          const parsedTransactions = mpesaMessages
-            .map(msg => parseMPESAMessage(msg))
-            .filter((t): t is Transaction => t !== null)
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-          console.log(`Parsed ${parsedTransactions.length} transactions`);
-
-          setTransactions(parsedTransactions);
-          saveTransactions(parsedTransactions);
-        },
+  // Filter transactions for selected month
+  const monthTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      const transDate = new Date(t.date);
+      return (
+        transDate.getMonth() === selectedMonth.getMonth() &&
+        transDate.getFullYear() === selectedMonth.getFullYear()
       );
+    });
+  }, [transactions, selectedMonth]);
+
+  // Calculate accurate totals
+  const stats = useMemo(() => {
+    let totalIncome = 0;
+    let totalExpenses = 0;
+    let transactionCount = 0;
+
+    monthTransactions.forEach(t => {
+      transactionCount++;
+      if (t.type === 'received') {
+        totalIncome += t.amount;
+      } else if (['sent', 'payment', 'withdrawal', 'airtime'].includes(t.type)) {
+        totalExpenses += t.amount;
+      }
+    });
+
+    const netBalance = totalIncome - totalExpenses;
+
+    return {
+      totalIncome,
+      totalExpenses,
+      netBalance,
+      transactionCount,
+    };
+  }, [monthTransactions]);
+
+  // Get category breakdown
+  const categoryBreakdown = useMemo(() => {
+    const breakdown: { [key: string]: number } = {};
+    
+    monthTransactions.forEach(t => {
+      if (t.type !== 'received') {
+        const category = t.category || 'Other';
+        breakdown[category] = (breakdown[category] || 0) + t.amount;
+      }
+    });
+
+    return Object.entries(breakdown)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [monthTransactions]);
+
+  // Recent transactions
+  const recentTransactions = useMemo(() => {
+    return monthTransactions.slice(0, 5);
+  }, [monthTransactions]);
+
+  const goToPreviousMonth = () => {
+    const newDate = new Date(selectedMonth);
+    newDate.setMonth(newDate.getMonth() - 1);
+    setSelectedMonth(newDate);
+  };
+
+  const goToNextMonth = () => {
+    const currentDate = new Date();
+    const nextMonth = new Date(selectedMonth);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    
+    // Don't allow going beyond current month
+    if (nextMonth <= currentDate) {
+      setSelectedMonth(nextMonth);
     }
   };
 
-  const parseMPESAMessage = (sms: SMSMessage): Transaction | null => {
-    const text = sms.body;
-    const date = new Date(parseInt(sms.date));
-
-    let type: Transaction['type'] = 'unknown';
-    let amount = 0;
-    let recipient = '';
-    let sender = '';
-    let balance = 0;
-    let transactionCode = '';
-    let phoneNumber = '';
-
-    const codePattern = /^([A-Z0-9]{10})\s+Confirmed/i;
-    const codeMatch = text.match(codePattern);
-    if (codeMatch) {
-      transactionCode = codeMatch[1];
-    }
-
-    const balancePattern = /New M-PESA balance is Ksh([\d,]+\.\d{2})/i;
-    const balanceMatch = text.match(balancePattern);
-    if (balanceMatch) {
-      balance = parseFloat(balanceMatch[1].replace(/,/g, ''));
-    }
-
-    const receivedPattern = /You have received Ksh([\d,]+\.\d{2}) from (.+?)(?:\s+\*+\s+)?(\d{10}|\d{4}\*+\d+)?\s+on/i;
-    const receivedMatch = text.match(receivedPattern);
-
-    if (receivedMatch) {
-      type = 'received';
-      amount = parseFloat(receivedMatch[1].replace(/,/g, ''));
-      sender = receivedMatch[2].trim();
-      phoneNumber = receivedMatch[3] || '';
-      
-      return {
-        id: sms._id,
-        type,
-        amount,
-        recipient: '',
-        sender,
-        balance,
-        transactionCode,
-        date: date.toISOString(),
-        rawMessage: text,
-        category: 'Income',
-        phoneNumber,
-      };
-    }
-
-    const sentPattern = /Ksh([\d,]+\.\d{2}) sent to (.+?)(?:\s+)?(\d{10})?\s+on/i;
-    const sentMatch = text.match(sentPattern);
-
-    if (sentMatch) {
-      type = 'sent';
-      amount = parseFloat(sentMatch[1].replace(/,/g, ''));
-      recipient = sentMatch[2].trim();
-      phoneNumber = sentMatch[3] || '';
-      
-      return {
-        id: sms._id,
-        type,
-        amount,
-        recipient,
-        sender: '',
-        balance,
-        transactionCode,
-        date: date.toISOString(),
-        rawMessage: text,
-        category: categorizeTransaction(type, recipient, phoneNumber),
-        phoneNumber,
-      };
-    }
-
-    const paidPattern = /Ksh([\d,]+\.\d{2}) paid to (.+?)\.?(?:\s+on|\s+New)/i;
-    const paidMatch = text.match(paidPattern);
-
-    if (paidMatch) {
-      type = 'payment';
-      amount = parseFloat(paidMatch[1].replace(/,/g, ''));
-      recipient = paidMatch[2].trim();
-      
-      return {
-        id: sms._id,
-        type,
-        amount,
-        recipient,
-        sender: '',
-        balance,
-        transactionCode,
-        date: date.toISOString(),
-        rawMessage: text,
-        category: categorizeTransaction(type, recipient, ''),
-        phoneNumber: '',
-      };
-    }
-
-    const withdrawPattern = /Ksh([\d,]+\.\d{2}) withdrawn from (.+?)\.?(?:\s+on|\s+New)/i;
-    const withdrawMatch = text.match(withdrawPattern);
-
-    if (withdrawMatch) {
-      type = 'withdrawal';
-      amount = parseFloat(withdrawMatch[1].replace(/,/g, ''));
-      recipient = withdrawMatch[2].trim();
-      
-      return {
-        id: sms._id,
-        type,
-        amount,
-        recipient,
-        sender: '',
-        balance,
-        transactionCode,
-        date: date.toISOString(),
-        rawMessage: text,
-        category: 'Cash Withdrawal',
-        phoneNumber: '',
-      };
-    }
-
-    const airtimePattern = /Ksh([\d,]+\.\d{2}) (worth of airtime|airtime|bought airtime|for airtime)/i;
-    const airtimeMatch = text.match(airtimePattern);
-
-    if (airtimeMatch) {
-      type = 'airtime';
-      amount = parseFloat(airtimeMatch[1].replace(/,/g, ''));
-      
-      return {
-        id: sms._id,
-        type,
-        amount,
-        recipient: 'Airtime',
-        sender: '',
-        balance,
-        transactionCode,
-        date: date.toISOString(),
-        rawMessage: text,
-        category: 'Airtime',
-        phoneNumber: '',
-      };
-    }
-
-    if (transactionCode) {
-      console.log('Could not parse transaction:', text.substring(0, 100));
-    }
-
-    return null;
+  const isCurrentMonth = () => {
+    const current = new Date();
+    return (
+      selectedMonth.getMonth() === current.getMonth() &&
+      selectedMonth.getFullYear() === current.getFullYear()
+    );
   };
 
-  const categorizeTransaction = (
-    type: string,
-    name: string,
-    phone: string
-  ): string => {
-    if (type === 'received') return 'Income';
-    if (type === 'withdrawal') return 'Cash Withdrawal';
-    if (type === 'airtime') return 'Airtime';
-
-    const lower = name.toLowerCase();
-
-    if (
-      lower.includes('shop') ||
-      lower.includes('store') ||
-      lower.includes('supermarket') ||
-      lower.includes('carrefour') ||
-      lower.includes('naivas') ||
-      lower.includes('quickmart') ||
-      lower.includes('tuskys')
-    )
-      return 'Shopping';
-
-    if (
-      lower.includes('restaurant') ||
-      lower.includes('food') ||
-      lower.includes('cafe') ||
-      lower.includes('kfc') ||
-      lower.includes('java') ||
-      lower.includes('pizza') ||
-      lower.includes('hotel') ||
-      lower.includes('eatery')
-    )
-      return 'Food & Dining';
-
-    if (
-      lower.includes('fuel') ||
-      lower.includes('petrol') ||
-      lower.includes('gas') ||
-      lower.includes('uber') ||
-      lower.includes('bolt') ||
-      lower.includes('matatu') ||
-      lower.includes('bus') ||
-      lower.includes('taxi')
-    )
-      return 'Transport';
-
-    if (
-      lower.includes('hospital') ||
-      lower.includes('clinic') ||
-      lower.includes('pharmacy') ||
-      lower.includes('medical') ||
-      lower.includes('doctor') ||
-      lower.includes('health')
-    )
-      return 'Health';
-
-    if (
-      lower.includes('kplc') ||
-      lower.includes('electric') ||
-      lower.includes('water') ||
-      lower.includes('rent') ||
-      lower.includes('nairobi water') ||
-      lower.includes('gotv') ||
-      lower.includes('dstv') ||
-      lower.includes('zuku') ||
-      lower.includes('startimes')
-    )
-      return 'Bills & Utilities';
-
-    if (
-      lower.includes('school') ||
-      lower.includes('college') ||
-      lower.includes('university') ||
-      lower.includes('tuition') ||
-      lower.includes('education')
-    )
-      return 'Education';
-
-    if (
-      lower.includes('safaricom') ||
-      lower.includes('airtel') ||
-      lower.includes('telkom')
-    )
-      return 'Airtime';
-
-    if (/^[A-Z][a-z]+(\s+[A-Z][a-z]+)*$/i.test(name.trim())) {
-      return 'Personal Transfer';
-    }
-
-    return 'Other';
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-KE', {
+      style: 'currency',
+      currency: 'KES',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
   };
 
-  const saveTransactions = async (data: Transaction[]): Promise<void> => {
-    try {
-      await AsyncStorage.setItem('transactions', JSON.stringify(data));
-    } catch (e) {
-      console.log('Error saving transactions:', e);
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) {
+      return 'Today';
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: { [key: string]: string } = {
+      'Shopping': '#F59E0B',
+      'Food & Dining': '#EF4444',
+      'Transport': '#3B82F6',
+      'Health': '#10B981',
+      'Bills & Utilities': '#8B5CF6',
+      'Education': '#EC4899',
+      'Airtime': '#06B6D4',
+      'Cash Withdrawal': '#6B7280',
+      'Personal Transfer': '#14B8A6',
+      'Other': '#94A3B8',
+    };
+    return colors[category] || '#94A3B8';
+  };
+
+  const getCategoryIcon = (category: string) => {
+    const icons: { [key: string]: string } = {
+      'Shopping': '🛒',
+      'Food & Dining': '🍽️',
+      'Transport': '🚗',
+      'Health': '⚕️',
+      'Bills & Utilities': '💡',
+      'Education': '📚',
+      'Airtime': '📱',
+      'Cash Withdrawal': '💵',
+      'Personal Transfer': '👤',
+      'Other': '📊',
+    };
+    return icons[category] || '📊';
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#10B981" />
-      <NavigationContainer>
-        <Tab.Navigator
-          screenOptions={{
-            tabBarActiveTintColor: '#10B981',
-            tabBarInactiveTintColor: '#9CA3AF',
-            tabBarStyle: styles.tabBar,
-            tabBarLabelStyle: styles.tabBarLabel,
-            headerStyle: styles.header,
-            headerTintColor: '#fff',
-            headerTitleStyle: styles.headerTitle,
-          }}>
-          <Tab.Screen 
-            name="Dashboard" 
-            options={{ 
-              tabBarLabel: 'Home',
-              tabBarIcon: ({ color, size }) => (
-                <HomeIcon color={color} size={size} />
-              ),
-            }}>
-            {props => <DashboardScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-          <Tab.Screen
-            name="Transactions"
-            options={{ 
-              tabBarLabel: 'History',
-              tabBarIcon: ({ color, size }) => (
-                <ListIcon color={color} size={size} />
-              ),
-            }}>
-            {props => (
-              <TransactionsScreen {...props} transactions={transactions} />
-            )}
-          </Tab.Screen>
-          <Tab.Screen 
-            name="Analytics" 
-            options={{ 
-              tabBarLabel: 'Analytics',
-              tabBarIcon: ({ color, size }) => (
-                <ChartIcon color={color} size={size} />
-              ),
-            }}>
-            {props => <AnalyticsScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-          <Tab.Screen 
-            name="Insights" 
-            options={{ 
-              tabBarLabel: 'Insights',
-              tabBarIcon: ({ color, size }) => (
-                <BulbIcon color={color} size={size} />
-              ),
-            }}>
-            {props => <InsightsScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-        </Tab.Navigator>
-      </NavigationContainer>
-    </SafeAreaView>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Month Selector */}
+      <View style={styles.monthSelector}>
+        <TouchableOpacity 
+          style={styles.monthButton}
+          onPress={goToPreviousMonth}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft color="#0EA5E9" />
+        </TouchableOpacity>
+        
+        <View style={styles.monthLabel}>
+          <Text style={styles.monthText}>
+            {monthNames[selectedMonth.getMonth()]} {selectedMonth.getFullYear()}
+          </Text>
+          {isCurrentMonth() && (
+            <View style={styles.currentBadge}>
+              <Text style={styles.currentBadgeText}>Current</Text>
+            </View>
+          )}
+        </View>
+        
+        <TouchableOpacity 
+          style={[styles.monthButton, isCurrentMonth() && styles.monthButtonDisabled]}
+          onPress={goToNextMonth}
+          disabled={isCurrentMonth()}
+          activeOpacity={0.7}
+        >
+          <ChevronRight color={isCurrentMonth() ? '#CBD5E1' : '#0EA5E9'} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Cards */}
+      <View style={styles.summaryContainer}>
+        <View style={[styles.summaryCard, styles.incomeCard]}>
+          <Text style={styles.summaryLabel}>Income</Text>
+          <Text style={styles.summaryAmount}>{formatCurrency(stats.totalIncome)}</Text>
+          <View style={styles.summaryBadge}>
+            <Text style={styles.summaryBadgeText}>↑ Received</Text>
+          </View>
+        </View>
+
+        <View style={[styles.summaryCard, styles.expenseCard]}>
+          <Text style={styles.summaryLabel}>Expenses</Text>
+          <Text style={styles.summaryAmount}>{formatCurrency(stats.totalExpenses)}</Text>
+          <View style={[styles.summaryBadge, styles.expenseBadge]}>
+            <Text style={[styles.summaryBadgeText, styles.expenseBadgeText]}>↓ Spent</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Net Balance */}
+      <View style={[
+        styles.balanceCard,
+        stats.netBalance >= 0 ? styles.positiveBalance : styles.negativeBalance
+      ]}>
+        <Text style={styles.balanceLabel}>Net Balance</Text>
+        <Text style={styles.balanceAmount}>{formatCurrency(stats.netBalance)}</Text>
+        <Text style={styles.balanceSubtext}>
+          {stats.transactionCount} transaction{stats.transactionCount !== 1 ? 's' : ''} this month
+        </Text>
+      </View>
+
+      {/* Top Spending Categories */}
+      {categoryBreakdown.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Top Spending</Text>
+          <View style={styles.categoriesContainer}>
+            {categoryBreakdown.map(([category, amount], index) => {
+              const percentage = (amount / stats.totalExpenses) * 100;
+              return (
+                <View key={category} style={styles.categoryItem}>
+                  <View style={styles.categoryHeader}>
+                    <View style={styles.categoryIconContainer}>
+                      <Text style={styles.categoryIcon}>{getCategoryIcon(category)}</Text>
+                      <Text style={styles.categoryName}>{category}</Text>
+                    </View>
+                    <Text style={styles.categoryAmount}>{formatCurrency(amount)}</Text>
+                  </View>
+                  <View style={styles.progressBar}>
+                    <View 
+                      style={[
+                        styles.progressFill, 
+                        { 
+                          width: `${percentage}%`,
+                          backgroundColor: getCategoryColor(category)
+                        }
+                      ]} 
+                    />
+                  </View>
+                  <Text style={styles.categoryPercentage}>{percentage.toFixed(1)}% of spending</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Recent Transactions */}
+      {recentTransactions.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Transactions</Text>
+          <View style={styles.transactionsContainer}>
+            {recentTransactions.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionItem}>
+                <View style={[
+                  styles.transactionIcon,
+                  { backgroundColor: transaction.type === 'received' ? '#DCFCE7' : '#FEE2E2' }
+                ]}>
+                  <Text style={styles.transactionIconText}>
+                    {transaction.type === 'received' ? '↓' : '↑'}
+                  </Text>
+                </View>
+                <View style={styles.transactionDetails}>
+                  <Text style={styles.transactionName} numberOfLines={1}>
+                    {transaction.type === 'received' 
+                      ? transaction.sender 
+                      : transaction.recipient}
+                  </Text>
+                  <Text style={styles.transactionDate}>{formatDate(transaction.date)}</Text>
+                </View>
+                <Text style={[
+                  styles.transactionAmount,
+                  transaction.type === 'received' ? styles.positiveAmount : styles.negativeAmount
+                ]}>
+                  {transaction.type === 'received' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {monthTransactions.length === 0 && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>No transactions found for this month</Text>
+        </View>
+      )}
+
+      <View style={{ height: 100 }} />
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F8FAFC',
   },
-  tabBar: {
-    height: 65,
-    paddingBottom: 10,
-    paddingTop: 8,
+  monthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    marginBottom: 16,
   },
-  tabBarLabel: {
+  monthButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  monthButtonDisabled: {
+    opacity: 0.3,
+  },
+  monthLabel: {
+    alignItems: 'center',
+  },
+  monthText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  currentBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  currentBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    marginTop: -2,
+    color: '#0EA5E9',
   },
-  header: {
-    backgroundColor: '#10B981',
-    elevation: 4,
+  summaryContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 12,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    flex: 1,
+    padding: 20,
+    borderRadius: 16,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  headerTitle: {
-    fontWeight: 'bold',
+  incomeCard: {
+    backgroundColor: '#FFFFFF',
+  },
+  expenseCard: {
+    backgroundColor: '#FFFFFF',
+  },
+  summaryLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  summaryAmount: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  summaryBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  expenseBadge: {
+    backgroundColor: '#FEE2E2',
+  },
+  summaryBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#16A34A',
+  },
+  expenseBadgeText: {
+    color: '#DC2626',
+  },
+  balanceCard: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 24,
+    borderRadius: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  positiveBalance: {
+    backgroundColor: '#10B981',
+  },
+  negativeBalance: {
+    backgroundColor: '#EF4444',
+  },
+  balanceLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    opacity: 0.9,
+    marginBottom: 8,
+  },
+  balanceAmount: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  balanceSubtext: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    opacity: 0.8,
+  },
+  section: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  sectionTitle: {
     fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 12,
   },
-  // Custom Icon Styles
-  iconContainer: {
+  categoriesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  categoryItem: {
+    marginBottom: 20,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  categoryIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryIcon: {
+    fontSize: 20,
+  },
+  categoryName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  categoryAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  categoryPercentage: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  transactionsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 12,
+  },
+  transactionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Home Icon
-  homeIcon: {
-    width: '70%',
-    height: '50%',
-    borderBottomWidth: 0,
-    borderLeftWidth: 2.5,
-    borderRightWidth: 2.5,
-    position: 'absolute',
-    bottom: 2,
+  transactionIconText: {
+    fontSize: 20,
+    fontWeight: '700',
   },
-  homeIconRoof: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 12,
-    borderRightWidth: 12,
-    borderBottomWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    position: 'absolute',
-    top: 0,
+  transactionDetails: {
+    flex: 1,
   },
-  // List Icon
-  listLine: {
-    height: 2.5,
-    borderRadius: 2,
-    marginVertical: 2,
+  transactionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 2,
   },
-  // Chart Icon
-  chartBar: {
-    width: 5,
-    borderRadius: 2,
-    marginHorizontal: 1.5,
-    alignSelf: 'flex-end',
+  transactionDate: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
   },
-  // Bulb Icon
-  bulb: {
-    borderRadius: 100,
-    position: 'absolute',
-    top: 0,
+  transactionAmount: {
+    fontSize: 15,
+    fontWeight: '700',
   },
-  bulbBase: {
-    height: 6,
-    borderRadius: 1,
-    position: 'absolute',
-    bottom: 2,
+  positiveAmount: {
+    color: '#10B981',
+  },
+  negativeAmount: {
+    color: '#EF4444',
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
   },
 });
+
+const App = () => {
+  // For demo purposes, we'll create mock transactions
+  // In a real app, these would come from SMS parsing
+  const mockTransactions: Transaction[] = [
+    {
+      id: '1',
+      type: 'sent' as 'sent',
+      amount: 500,
+      recipient: 'John Doe',
+      sender: '',
+      balance: 1200,
+      transactionCode: 'ABC123',
+      date: new Date().toISOString(),
+      rawMessage: 'You have sent KSh500 to John Doe. New balance is KSh1200.',
+      category: 'Personal Transfer',
+    },
+    {
+      id: '2',
+      type: 'received' as 'received',
+      amount: 2000,
+      recipient: '',
+      sender: 'Jane Smith',
+      balance: 3200,
+      transactionCode: 'DEF456',
+      date: new Date(Date.now() - 86400000).toISOString(),
+      rawMessage: 'You have received KSh2000 from Jane Smith. New balance is KSh3200.',
+      category: 'Personal Transfer',
+    },
+  ];
+
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
+
+  return (
+    <LoadingProvider>
+      <DashboardScreen 
+        transactions={mockTransactions}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+      />
+    </LoadingProvider>
+  );
+};
 
 export default App;

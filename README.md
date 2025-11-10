@@ -10,6 +10,9 @@ A React Native mobile application that automatically analyzes your M-Pesa transa
 - 📊 **Transaction History** - Detailed view of all your M-Pesa transactions
 - 🔍 **Spending Insights** - Get personalized insights into your spending habits
 - 💾 **Local Storage** - Securely stores transaction data on your device
+- ⏳ **Date Range Filtering** - Analyze spending within specific date ranges
+- 🔄 **Enhanced Loading Experience** - Beautiful animations during SMS processing
+- 📅 **Custom Date Selection** - Choose specific periods for analysis
 
 
 ## 🚀 Getting Started
@@ -72,7 +75,15 @@ mpesa-analyzer/
 │   │   ├── TransactionsScreen.tsx   # List of all transactions
 │   │   ├── AnalyticsScreen.tsx      # Charts and analytics
 │   │   └── InsightsScreen.tsx       # Spending insights
-│   └── components/                   # Reusable components
+│   ├── components/                   # Reusable components
+│   │   ├── LoadingScreen.tsx        # Animated loading screen
+│   │   ├── DateRangePicker.tsx      # Date range selection component
+│   │   └── SMSReaderDemo.tsx        # Demo component for SMS reading
+│   ├── contexts/                    # React contexts
+│   │   └── LoadingContext.tsx       # Loading state management
+│   ├── hooks/                       # Custom React hooks
+│   │   └── useSMSReader.ts          # Hook for reading SMS messages
+│   └── utils/                       # Utility functions
 ├── App.tsx                           # Main app component
 └── package.json
 ```
@@ -147,6 +158,8 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 - [ ] Add iOS support
 - [ ] Export transactions to CSV/PDF
 - [ ] Budget setting and tracking
+- [x] Enhanced loading animations
+- [x] Date range filtering for analytics
 - [ ] Monthly/yearly spending comparisons
 - [ ] More granular category customization
 - [ ] Multi-language support

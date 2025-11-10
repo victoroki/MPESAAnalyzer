@@ -12,7 +12,7 @@ import {format, subDays, startOfDay, endOfDay, isWithinInterval} from 'date-fns'
 import DateRangePicker from '../components/DateRangePicker';
 
 const AnalyticsScreen = ({transactions}) => {
-  const [period, setPeriod] = useState('week');
+  const [period, setPeriod] = useState('week'); 
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [endDate, setEndDate] = useState(new Date());
 
@@ -68,20 +68,14 @@ const AnalyticsScreen = ({transactions}) => {
   const getCategoryData = () => {
     const categories = {};
     transactions
-      .filter(t => t.type !== 'received' && t.category)
+      .filter(t => t.type !== 'received')
       .forEach(t => {
-        const cat = t.category || 'Other';
-        categories[cat] = (categories[cat] || 0) + t.amount;
+        categories[t.category] = (categories[t.category] || 0) + t.amount;
       });
 
-    // Sort by amount and take top 5 categories to avoid overlap
-    const sortedCategories = Object.entries(categories)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-
     return {
-      labels: sortedCategories.map(([label]) => label),
-      data: sortedCategories.map(([, value]) => value),
+      labels: Object.keys(categories),
+      data: Object.values(categories),
     };
   };
 
@@ -97,11 +91,11 @@ const AnalyticsScreen = ({transactions}) => {
       }
     });
 
-    const topReceivers = Object.entries(people.sent)
+    const topReceivers = Object.entries(people.received)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
-    const topSenders = Object.entries(people.received)
+    const topSenders = Object.entries(people.sent)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
@@ -124,7 +118,7 @@ const AnalyticsScreen = ({transactions}) => {
     style: {borderRadius: 16},
     propsForDots: {r: '6', strokeWidth: '3', stroke: '#4F46E5'},
     propsForBackgroundLines: {
-      strokeDasharray: '',
+      strokeDasharray: '', // solid lines
       stroke: '#E5E7EB',
       strokeWidth: 1,
     },
@@ -184,98 +178,94 @@ const AnalyticsScreen = ({transactions}) => {
           </View>
         </View>
         <View style={styles.chartContainer}>
-          <LineChart
-            data={{
-              labels: periodData.labels,
-              datasets: [
-                {
-                  data: periodData.receivedData.length > 0 ? periodData.receivedData : [0],
-                  color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                  strokeWidth: 3,
-                },
-                {
-                  data: periodData.spentData.length > 0 ? periodData.spentData : [0],
-                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                  strokeWidth: 3,
-                },
-              ],
-            }}
-            width={screenWidth - 64}
-            height={250}
-            chartConfig={{
-              ...chartConfig,
-              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-              strokeWidth: 2,
-              barPercentage: 0.5,
-            }}
-            bezier
-            style={styles.chart}
-            withVerticalLabels={true}
-            withHorizontalLabels={true}
-            withInnerLines={true}
-            withOuterLines={false}
-            withVerticalLines={false}
-            withHorizontalLines={true}
-            segments={5}
-            yAxisLabel="KSh"
-            yAxisSuffix=""
-            withScrollableDot={true}
-            onDataPointClick={(data) => {
-              console.log('Data point clicked:', data);
-            }}
-          />
-        </View>
+        <LineChart
+          data={{
+            labels: periodData.labels,
+            datasets: [
+              {
+                data: periodData.receivedData.length > 0 ? periodData.receivedData : [0],
+                color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                strokeWidth: 3,
+              },
+              {
+                data: periodData.spentData.length > 0 ? periodData.spentData : [0],
+                color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+                strokeWidth: 3,
+              },
+            ],
+          }}
+          width={screenWidth - 32}
+          height={250}
+          chartConfig={{
+            ...chartConfig,
+            color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
+            strokeWidth: 2,
+            barPercentage: 0.5,
+          }}
+          bezier
+          style={styles.chart}
+          withVerticalLabels={true}
+          withHorizontalLabels={true}
+          withInnerLines={true}
+          withOuterLines={false}
+          withVerticalLines={false}
+          withHorizontalLines={true}
+          segments={5}
+          yAxisLabel="KSh"
+          yAxisSuffix=""
+          withScrollableDot={true}
+          onDataPointClick={(data) => {
+            console.log('Data point clicked:', data);
+          }}
+        />
       </View>
+    </View>
 
       {/* Category Spending Chart */}
       {categoryData.labels.length > 0 && (
         <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Top 5 Categories</Text>
+          <Text style={styles.chartTitle}>Spending by Category</Text>
           <View style={styles.chartContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <BarChart
-                data={{
-                  labels: categoryData.labels.map(label => {
-                    // Truncate long labels and add line breaks for better spacing
-                    if (label.length > 8) {
-                      return label.substring(0, 8) + '...';
-                    }
-                    return label;
-                  }),
-                  datasets: [
-                    {
-                      data: categoryData.data,
-                      colors: [
-                  () => '#10B981',
-                  () => '#3B82F6',
-                  () => '#8B5CF6',
-                  () => '#F59E0B',
-                  () => '#EF4444',
-                ]
-                    }
-                  ],
-                }}
-                width={Math.max(screenWidth - 64, categoryData.labels.length * 80)}
-                height={250}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                  barPercentage: 0.6,
-                  strokeWidth: 2,
-                }}
-                style={styles.chart}
-                showValuesOnTopOfBars={true}
-                withInnerLines={true}
-                segments={5}
-                fromZero={true}
-                yAxisLabel="KSh "
-                yAxisSuffix=""
-                withCustomBarColorFromData={true}
-                flatColor={true}
-              />
-            </ScrollView>
-          </View>
+          <BarChart
+            data={{
+              labels: categoryData.labels.map(label => 
+                label.length > 10 ? label.substring(0, 10) + '...' : label
+              ),
+              datasets: [
+                {
+                  data: categoryData.data,
+                  colors: [
+                    '#10B981',
+                    '#3B82F6',
+                    '#8B5CF6',
+                    '#F59E0B',
+                    '#EF4444',
+                    '#06B6D4',
+                    '#EC4899',
+                    '#6B7280'
+                  ]
+                }
+              ],
+            }}
+            width={screenWidth - 32}
+            height={250}
+            chartConfig={{
+              ...chartConfig,
+              color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+              barPercentage: 0.6,
+              strokeWidth: 2,
+            }}
+            style={styles.chart}
+            showValuesOnTopOfBars={true}
+            withInnerLines={true}
+            segments={5}
+            fromZero={true}
+            yAxisLabel="KSh"
+            yAxisSuffix=""
+            withCustomBarColorFromData={true}
+            flatColor={true}
+          />
         </View>
       )}
 
@@ -543,7 +533,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
-    marginTop: 24,
+    marginBottom: 24,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
