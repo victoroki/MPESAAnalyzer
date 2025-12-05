@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -6,24 +6,63 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  Animated,
 } from 'react-native';
+import { LoadingContext } from '../contexts/LoadingContext';
 import { PieChart } from 'react-native-chart-kit';
 import LinearGradient from 'react-native-linear-gradient';
 import {
-  getCurrentMonthStats,
+  calculateMonthlyStats,
   compareWithPreviousMonth,
   formatCurrency,
   getDailyAverage,
   getTopCategories,
 } from '../utils/transactionHelpers';
+import MonthSelector from '../components/MonthSelector';
 
-const DashboardScreen = ({ transactions }) => {
+const DashboardScreen = ({ transactions, onRefresh }) => {
   const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const { showLoading, hideLoading } = useContext(LoadingContext);
 
-  // Get current month statistics
-  const currentMonthStats = getCurrentMonthStats(transactions);
-  const comparison = compareWithPreviousMonth(transactions);
+  // Get current month statistics based on selectedDate
+  const currentMonthStats = calculateMonthlyStats(
+    transactions,
+    selectedDate.getFullYear(),
+    selectedDate.getMonth()
+  );
+  
+  console.log('[DEBUG] DashboardScreen transactions count:', transactions.length);
+  console.log('[DEBUG] Current month stats:', currentMonthStats);
+  
+  const handleRefresh = async () => {
+    console.log('[DEBUG] Manual refresh triggered');
+    if (onRefresh) {
+      await onRefresh();
+    }
+  };
+
+  // For comparison, we need to pass the selected date to compareWithPreviousMonth
+  // But compareWithPreviousMonth currently uses "now". We might need to update it or just manually calculate previous month here.
+  // Let's manually calculate for flexibility
+  const prevDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1);
+  const previousMonthStats = calculateMonthlyStats(
+    transactions,
+    prevDate.getFullYear(),
+    prevDate.getMonth()
+  );
+
+  const spendingChange = currentMonthStats.totalSpent - previousMonthStats.totalSpent;
+  const spendingChangePercentage = previousMonthStats.totalSpent > 0
+    ? (spendingChange / previousMonthStats.totalSpent) * 100
+    : 0;
+
+  const comparison = {
+    current: currentMonthStats,
+    previous: previousMonthStats,
+    spendingChange,
+    spendingChangePercentage,
+  };
+
   const topCategories = getTopCategories(currentMonthStats, 5);
   const dailyAverage = getDailyAverage(currentMonthStats);
 
@@ -78,17 +117,28 @@ const DashboardScreen = ({ transactions }) => {
     }));
 
   // Get last balance from most recent transaction
-  const latestBalance = transactions.length > 0 
-    ? transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].balance 
+  const latestBalance = transactions.length > 0
+    ? transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].balance
     : 0;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Manual Refresh Button */}
+      {transactions.length === 0 && (
+        <View style={styles.refreshContainer}>
+          <Text style={styles.noDataText}>No transaction data found</Text>
+          <Text style={styles.noDataSubtext}>Make sure you have M-Pesa SMS messages and have granted permission</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
+            <Text style={styles.refreshButtonText}>Refresh Data</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Hero Header with Gradient */}
-      <LinearGradient 
-        colors={['#6366F1', '#8B5CF6', '#A855F7']} 
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
+      <LinearGradient
+        colors={['#6366F1', '#8B5CF6', '#A855F7']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.header}
       >
         <View style={styles.headerContent}>
@@ -96,7 +146,7 @@ const DashboardScreen = ({ transactions }) => {
             <Text style={styles.welcomeEmoji}>👋</Text>
             <Text style={styles.headerTitle}>Welcome Back!</Text>
             <Text style={styles.headerSubtitle}>
-              {selectedPeriod === 'month' 
+              {selectedPeriod === 'month'
                 ? `${currentMonthStats.monthName} Financial Overview`
                 : 'Your Complete Financial Journey'}
             </Text>
@@ -135,7 +185,7 @@ const DashboardScreen = ({ transactions }) => {
             activeOpacity={0.7}
           >
             <Text style={[styles.periodButtonText, selectedPeriod === 'month' && styles.periodButtonTextActive]}>
-              📅 This Month
+              📅 Monthly
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -150,6 +200,16 @@ const DashboardScreen = ({ transactions }) => {
         </View>
       </View>
 
+      {/* Month Selector (Only visible when Monthly is selected) */}
+      {selectedPeriod === 'month' && (
+        <View style={styles.monthSelectorContainer}>
+          <MonthSelector
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
+        </View>
+      )}
+
       <View style={styles.content}>
         {/* Net Flow - Hero Card */}
         <LinearGradient
@@ -163,7 +223,7 @@ const DashboardScreen = ({ transactions }) => {
               </Text>
             </View>
             <Text style={styles.netFlowLabel}>
-              {selectedPeriod === 'month' ? 'Monthly Net Flow' : 'All-Time Net Flow'}
+              {selectedPeriod === 'month' ? 'Net Flow' : 'All-Time Net Flow'}
             </Text>
           </View>
           <Text style={[
@@ -178,7 +238,7 @@ const DashboardScreen = ({ transactions }) => {
               comparison.spendingChange > 0 ? styles.comparisonBadgeNegative : styles.comparisonBadgePositive
             ]}>
               <Text style={styles.comparisonText}>
-                {comparison.spendingChange > 0 ? '↑' : '↓'} 
+                {comparison.spendingChange > 0 ? '↑' : '↓'}
                 {Math.abs(comparison.spendingChangePercentage).toFixed(1)}% vs last month
               </Text>
             </View>
@@ -200,9 +260,7 @@ const DashboardScreen = ({ transactions }) => {
             </Text>
             <View style={styles.statBadge}>
               <Text style={styles.statBadgeText}>
-                {selectedPeriod === 'month'
-                  ? currentMonthStats.transactions.filter(t => t.type === 'received').length
-                  : transactions.filter(t => t.type === 'received').length} transactions
+                {selectedPeriod === 'month' ? 'This Month' : 'All Time'}
               </Text>
             </View>
           </LinearGradient>
@@ -212,7 +270,7 @@ const DashboardScreen = ({ transactions }) => {
             style={[styles.statCard, styles.statCardRight]}
           >
             <View style={styles.statIconContainer}>
-              <Text style={styles.statIcon}>💸</Text>
+              <Text style={styles.statIcon}>💳</Text>
             </View>
             <Text style={styles.statLabel}>Money Spent</Text>
             <Text style={[styles.statAmount, styles.negativeAmount]}>
@@ -220,42 +278,19 @@ const DashboardScreen = ({ transactions }) => {
             </Text>
             <View style={styles.statBadge}>
               <Text style={styles.statBadgeText}>
-                {selectedPeriod === 'month' 
-                  ? currentMonthStats.transactions.filter(t => t.type === 'sent' || t.type === 'payment').length
-                  : transactions.filter(t => t.type === 'sent' || t.type === 'payment').length} transactions
+                {selectedPeriod === 'month' ? 'This Month' : 'All Time'}
               </Text>
             </View>
           </LinearGradient>
         </View>
 
-        {/* Daily Average (only for monthly view) */}
-        {selectedPeriod === 'month' && (
-          <LinearGradient
-            colors={['#FEF3C7', '#FDE68A']}
-            style={styles.dailyCard}
-          >
-            <View style={styles.dailyHeader}>
-              <Text style={styles.dailyIcon}>⚡</Text>
-              <View style={styles.dailyTextContainer}>
-                <Text style={styles.dailyLabel}>Daily Average Spending</Text>
-                <Text style={styles.dailySubtext}>
-                  Based on {currentMonthStats.transactionCount} transactions
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.dailyAmount}>
-              {formatCurrency(dailyAverage)}
-            </Text>
-          </LinearGradient>
-        )}
-
-        {/* Spending by Category Section */}
+        {/* Category Breakdown */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>🎯</Text>
-            <Text style={styles.sectionTitle}>Spending Breakdown</Text>
+            <Text style={styles.sectionIcon}>📊</Text>
+            <Text style={styles.sectionTitle}>Spending by Category</Text>
           </View>
-          
+
           {pieData.length > 0 ? (
             <View style={styles.chartContainer}>
               <PieChart
@@ -263,7 +298,7 @@ const DashboardScreen = ({ transactions }) => {
                 width={Dimensions.get('window').width - 40}
                 height={220}
                 chartConfig={{
-                  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+                  color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                 }}
                 accessor="amount"
                 backgroundColor="transparent"
@@ -272,46 +307,39 @@ const DashboardScreen = ({ transactions }) => {
                 hasLegend={true}
               />
               
-              {/* Top Categories List */}
-              {selectedPeriod === 'month' && topCategories.length > 0 && (
-                <View style={styles.categoriesList}>
-                  <Text style={styles.categoriesTitle}>🏆 Top Spending Categories</Text>
-                  {topCategories.map((cat, index) => (
-                    <View key={cat.category} style={styles.categoryItem}>
-                      <LinearGradient
-                        colors={index === 0 ? ['#FCD34D', '#F59E0B'] : ['#6366F1', '#8B5CF6']}
-                        style={styles.categoryRank}
-                      >
-                        <Text style={styles.categoryRankText}>{index + 1}</Text>
-                      </LinearGradient>
-                      <View style={styles.categoryInfo}>
+              <View style={styles.categoriesList}>
+                {topCategories.map((cat, index) => (
+                  <View key={cat.category} style={styles.categoryRow}>
+                    <View style={styles.categoryInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        <View style={[styles.categoryColorDot, { backgroundColor: chartColors[index % 6] }]} />
                         <Text style={styles.categoryName}>{cat.category}</Text>
-                        <View style={styles.categoryBarContainer}>
-                          <View style={styles.categoryBar}>
-                            <LinearGradient
-                              colors={['#6366F1', '#8B5CF6']}
-                              start={{x: 0, y: 0}}
-                              end={{x: 1, y: 0}}
-                              style={[styles.categoryBarFill, { width: `${cat.percentage}%` }]}
-                            />
-                          </View>
+                      </View>
+                      <View style={styles.categoryBarContainer}>
+                        <View style={styles.categoryBar}>
+                          <LinearGradient
+                            colors={['#6366F1', '#8B5CF6']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={[styles.categoryBarFill, { width: `${cat.percentage}%` }]}
+                          />
                         </View>
                       </View>
-                      <View style={styles.categoryAmounts}>
-                        <Text style={styles.categoryAmount}>{formatCurrency(cat.amount)}</Text>
-                        <Text style={styles.categoryPercentage}>{cat.percentage.toFixed(1)}%</Text>
-                      </View>
                     </View>
-                  ))}
-                </View>
-              )}
+                    <View style={styles.categoryAmounts}>
+                      <Text style={styles.categoryAmount}>{formatCurrency(cat.amount)}</Text>
+                      <Text style={styles.categoryPercentage}>{cat.percentage.toFixed(1)}%</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>📊</Text>
               <Text style={styles.emptyStateText}>
-                {selectedPeriod === 'month' 
-                  ? 'No transactions this month yet' 
+                {selectedPeriod === 'month'
+                  ? 'No transactions this month yet'
                   : 'No transactions yet'}
               </Text>
               <Text style={styles.emptyStateSubtext}>
@@ -321,71 +349,41 @@ const DashboardScreen = ({ transactions }) => {
           )}
         </View>
 
-        {/* Quick Stats Grid */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>⚡</Text>
-            <Text style={styles.sectionTitle}>Quick Stats</Text>
+      {/* Quick Stats Grid */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionIcon}>⚡</Text>
+          <Text style={styles.sectionTitle}>Quick Stats</Text>
+        </View>
+        <View style={styles.statsGrid}>
+          <View style={styles.quickStatCard}>
+            <LinearGradient
+              colors={['#EEF2FF', '#E0E7FF']}
+              style={styles.quickStatGradient}
+            >
+              <Text style={styles.quickStatIcon}>📝</Text>
+              <Text style={styles.quickStatValue}>{displayStats.transactionCount}</Text>
+              <Text style={styles.quickStatLabel}>
+                {selectedPeriod === 'month' ? 'Monthly' : 'Total'} Transactions
+              </Text>
+            </LinearGradient>
           </View>
-          <View style={styles.statsGrid}>
-            <View style={styles.quickStatCard}>
-              <LinearGradient
-                colors={['#EEF2FF', '#E0E7FF']}
-                style={styles.quickStatGradient}
-              >
-                <Text style={styles.quickStatIcon}>📝</Text>
-                <Text style={styles.quickStatValue}>{displayStats.transactionCount}</Text>
-                <Text style={styles.quickStatLabel}>
-                  {selectedPeriod === 'month' ? 'Monthly' : 'Total'} Transactions
-                </Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.quickStatCard}>
-              <LinearGradient
-                colors={['#FEE2E2', '#FECACA']}
-                style={styles.quickStatGradient}
-              >
-                <Text style={styles.quickStatIcon}>💳</Text>
-                <Text style={styles.quickStatValue}>
-                  {selectedPeriod === 'month' 
-                    ? currentMonthStats.transactions.filter(t => t.type === 'sent' || t.type === 'payment').length
-                    : transactions.filter(t => t.type === 'sent' || t.type === 'payment').length}
-                </Text>
-                <Text style={styles.quickStatLabel}>Payments Made</Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.quickStatCard}>
-              <LinearGradient
-                colors={['#D1FAE5', '#A7F3D0']}
-                style={styles.quickStatGradient}
-              >
-                <Text style={styles.quickStatIcon}>📥</Text>
-                <Text style={styles.quickStatValue}>
-                  {selectedPeriod === 'month'
-                    ? currentMonthStats.transactions.filter(t => t.type === 'received').length
-                    : transactions.filter(t => t.type === 'received').length}
-                </Text>
-                <Text style={styles.quickStatLabel}>Money Received</Text>
-              </LinearGradient>
-            </View>
-            
-            <View style={styles.quickStatCard}>
-              <LinearGradient
-                colors={['#FEF3C7', '#FDE68A']}
-                style={styles.quickStatGradient}
-              >
-                <Text style={styles.quickStatIcon}>🏷️</Text>
-                <Text style={styles.quickStatValue}>
-                  {Object.keys(displayStats.categorySpending).length}
-                </Text>
-                <Text style={styles.quickStatLabel}>Categories</Text>
-              </LinearGradient>
-            </View>
+
+          <View style={styles.quickStatCard}>
+            <LinearGradient
+              colors={['#FEE2E2', '#FECACA']}
+              style={styles.quickStatGradient}
+            >
+              <Text style={styles.quickStatIcon}>💳</Text>
+              <Text style={styles.quickStatValue}>
+                {formatCurrency(dailyAverage)}
+              </Text>
+              <Text style={styles.quickStatLabel}>Daily Average</Text>
+            </LinearGradient>
           </View>
         </View>
       </View>
+    </View>
     </ScrollView>
   );
 };
@@ -395,34 +393,73 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  refreshContainer: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  noDataText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  noDataSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  refreshButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   header: {
+    height: 250,
     paddingTop: 60,
     paddingHorizontal: 20,
-    paddingBottom: 100,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    position: 'relative',
   },
   headerContent: {
-    marginBottom: 20,
+    zIndex: 2,
   },
   welcomeEmoji: {
-    fontSize: 32,
+    fontSize: 28,
     marginBottom: 8,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '800',
     color: '#fff',
-    marginBottom: 6,
+    marginBottom: 8,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#E0E7FF',
-    opacity: 0.9,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+    maxWidth: '80%',
   },
   balanceCardFloat: {
-    marginTop: 16,
+    position: 'absolute',
+    bottom: -40,
+    left: 20,
+    right: 20,
+    zIndex: 3,
   },
   balanceCard: {
     borderRadius: 20,
@@ -488,55 +525,55 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 4,
   },
   periodButton: {
     flex: 1,
     paddingVertical: 14,
-    alignItems: 'center',
     borderRadius: 12,
+    alignItems: 'center',
   },
   periodButtonActive: {
     backgroundColor: '#6366F1',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   periodButtonText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#6B7280',
   },
   periodButtonTextActive: {
     color: '#fff',
   },
+  monthSelectorContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
   content: {
     paddingHorizontal: 20,
-    paddingBottom: 30,
+    paddingTop: 10,
+    paddingBottom: 40,
   },
   netFlowCard: {
     borderRadius: 20,
     padding: 24,
-    marginBottom: 16,
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: 6,
   },
   netFlowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   netFlowIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -605,153 +642,103 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   statIcon: {
-    fontSize: 24,
+    fontSize: 20,
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#6B7280',
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   statAmount: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 12,
     letterSpacing: -0.5,
   },
   statBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
   statBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#6B7280',
     fontWeight: '600',
   },
-  dailyCard: {
+  section: {
+    backgroundColor: '#fff',
     borderRadius: 20,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
-  },
-  dailyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  dailyIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  dailyTextContainer: {
-    flex: 1,
-  },
-  dailyLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 2,
-  },
-  dailySubtext: {
-    fontSize: 12,
-    color: '#78350F',
-  },
-  dailyAmount: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#92400E',
-    letterSpacing: -0.5,
-  },
-  section: {
-    marginBottom: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   sectionIcon: {
-    fontSize: 24,
-    marginRight: 10,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    letterSpacing: -0.5,
-  },
-  chartContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  categoriesList: {
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 2,
-    borderTopColor: '#F3F4F6',
-  },
-  categoriesTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 16,
-  },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  categoryRank: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontSize: 20,
     marginRight: 12,
   },
-  categoryRankText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  chartContainer: {
+    alignItems: 'center',
+  },
+  categoriesList: {
+    width: '100%',
+    marginTop: 20,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   categoryInfo: {
     flex: 1,
     marginRight: 12,
   },
+  categoryColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
   categoryName: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 6,
   },
   categoryBarContainer: {
     width: '100%',
+    marginTop: 6,
   },
   categoryBar: {
-    height: 8,
+    height: 6,
     backgroundColor: '#F3F4F6',
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   categoryBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   categoryAmounts: {
     alignItems: 'flex-end',
@@ -796,37 +783,28 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
+    gap: 16,
   },
   quickStatCard: {
-    width: '50%',
-    paddingHorizontal: 6,
-    marginBottom: 12,
+    flex: 1,
   },
   quickStatGradient: {
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
   },
   quickStatIcon: {
-    fontSize: 32,
+    fontSize: 24,
     marginBottom: 8,
   },
   quickStatValue: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#1F2937',
     marginBottom: 4,
-    letterSpacing: -0.5,
   },
   quickStatLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6B7280',
     fontWeight: '600',
     textAlign: 'center',

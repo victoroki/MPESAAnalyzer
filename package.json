@@ -23,6 +23,7 @@
     "react-native-get-sms-android": "^2.1.0",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-permissions": "^5.4.2",
+    "react-native-quick-sqlite": "^8.2.7",
     "react-native-reanimated": "^4.1.2",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "^4.16.0",

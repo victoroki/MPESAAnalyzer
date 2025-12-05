@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,11 @@ import {
   Dimensions,
   TouchableOpacity,
 } from 'react-native';
-import {LineChart, BarChart} from 'react-native-chart-kit';
-import {format, subDays, startOfDay, endOfDay, isWithinInterval} from 'date-fns';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+import { format, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import DateRangePicker from '../components/DateRangePicker';
 
-const AnalyticsScreen = ({transactions}) => {
+const AnalyticsScreen = ({ transactions }) => {
   const [period, setPeriod] = useState('week');
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [endDate, setEndDate] = useState(new Date());
@@ -62,7 +62,7 @@ const AnalyticsScreen = ({transactions}) => {
       receivedData.push(received);
     }
 
-    return {labels, spentData, receivedData};
+    return { labels, spentData, receivedData };
   };
 
   const getCategoryData = () => {
@@ -86,26 +86,34 @@ const AnalyticsScreen = ({transactions}) => {
   };
 
   const getTopPeople = () => {
-    const people = {received: {}, sent: {}};
+    const people = { received: {}, sent: {} };
 
     transactions.forEach(t => {
       if (t.type === 'received' && t.sender) {
-        people.received[t.sender] = (people.received[t.sender] || 0) + t.amount;
+        if (!people.received[t.sender]) {
+          people.received[t.sender] = { amount: 0, count: 0 };
+        }
+        people.received[t.sender].amount += t.amount;
+        people.received[t.sender].count += 1;
       }
       if ((t.type === 'sent' || t.type === 'payment') && t.recipient) {
-        people.sent[t.recipient] = (people.sent[t.recipient] || 0) + t.amount;
+        if (!people.sent[t.recipient]) {
+          people.sent[t.recipient] = { amount: 0, count: 0 };
+        }
+        people.sent[t.recipient].amount += t.amount;
+        people.sent[t.recipient].count += 1;
       }
     });
 
     const topReceivers = Object.entries(people.sent)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1].amount - a[1].amount)
       .slice(0, 5);
 
     const topSenders = Object.entries(people.received)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1].amount - a[1].amount)
       .slice(0, 5);
 
-    return {topReceivers, topSenders};
+    return { topReceivers, topSenders };
   };
 
   const periodData = getPeriodData();
@@ -114,6 +122,17 @@ const AnalyticsScreen = ({transactions}) => {
 
   const screenWidth = Dimensions.get('window').width;
 
+  // Helper to get initials
+  const getInitials = (name) => {
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   const chartConfig = {
     backgroundColor: '#ffffff',
     backgroundGradientFrom: '#ffffff',
@@ -121,8 +140,8 @@ const AnalyticsScreen = ({transactions}) => {
     decimalPlaces: 0,
     color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
     labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-    style: {borderRadius: 16},
-    propsForDots: {r: '6', strokeWidth: '3', stroke: '#4F46E5'},
+    style: { borderRadius: 16 },
+    propsForDots: { r: '6', strokeWidth: '3', stroke: '#4F46E5' },
     propsForBackgroundLines: {
       strokeDasharray: '',
       stroke: '#E5E7EB',
@@ -153,7 +172,7 @@ const AnalyticsScreen = ({transactions}) => {
       </View>
 
       {/* Date Range Picker */}
-      <DateRangePicker 
+      <DateRangePicker
         startDate={startDate}
         endDate={endDate}
         onDateRangeChange={handleDateRangeChange}
@@ -174,11 +193,11 @@ const AnalyticsScreen = ({transactions}) => {
           <Text style={styles.chartTitle}>Cash Flow</Text>
           <View style={styles.legend}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, {backgroundColor: '#10B981'}]} />
+              <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
               <Text style={styles.legendText}>Income</Text>
             </View>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, {backgroundColor: '#EF4444'}]} />
+              <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
               <Text style={styles.legendText}>Spending</Text>
             </View>
           </View>
@@ -220,7 +239,7 @@ const AnalyticsScreen = ({transactions}) => {
             segments={5}
             yAxisLabel="KSh"
             yAxisSuffix=""
-            withScrollableDot={true}
+            withScrollableDot={false}
             onDataPointClick={(data) => {
               console.log('Data point clicked:', data);
             }}
@@ -247,12 +266,12 @@ const AnalyticsScreen = ({transactions}) => {
                     {
                       data: categoryData.data,
                       colors: [
-                  () => '#10B981',
-                  () => '#3B82F6',
-                  () => '#8B5CF6',
-                  () => '#F59E0B',
-                  () => '#EF4444',
-                ]
+                        () => '#10B981',
+                        () => '#3B82F6',
+                        () => '#8B5CF6',
+                        () => '#F59E0B',
+                        () => '#EF4444',
+                      ]
                     }
                   ],
                 }}
@@ -286,18 +305,23 @@ const AnalyticsScreen = ({transactions}) => {
             <Text style={styles.listTitle}>Top Recipients</Text>
             <Text style={styles.listSubtitle}>People you send money to most</Text>
           </View>
-          {peopleData.topReceivers.map(([name, amount], index) => (
+          {peopleData.topReceivers.map(([name, stats], index) => (
             <View key={name} style={styles.personRow}>
               <View style={styles.personLeft}>
                 <View style={[styles.rankBadge, styles.spentBadge]}>
-                  <Text style={styles.rankNumber}>{index + 1}</Text>
+                  <Text style={styles.rankNumber}>{getInitials(name)}</Text>
                 </View>
-                <Text style={styles.personName} numberOfLines={1}>
-                  {name}
-                </Text>
+                <View>
+                  <Text style={styles.personName} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  <Text style={styles.personCount}>
+                    {stats.count} transactions
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.personAmount, {color: '#EF4444'}]}>
-                KSh {amount.toLocaleString('en-KE')}
+              <Text style={[styles.personAmount, { color: '#EF4444' }]}>
+                KSh {stats.amount.toLocaleString('en-KE')}
               </Text>
             </View>
           ))}
@@ -306,23 +330,28 @@ const AnalyticsScreen = ({transactions}) => {
 
       {/* Top Money Senders */}
       {peopleData.topSenders.length > 0 && (
-        <View style={[styles.listCard, {marginBottom: 24}]}>
+        <View style={[styles.listCard, { marginBottom: 24 }]}>
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>Top Senders</Text>
             <Text style={styles.listSubtitle}>People who send you money most</Text>
           </View>
-          {peopleData.topSenders.map(([name, amount], index) => (
+          {peopleData.topSenders.map(([name, stats], index) => (
             <View key={name} style={styles.personRow}>
               <View style={styles.personLeft}>
                 <View style={[styles.rankBadge, styles.incomeBadge]}>
-                  <Text style={styles.rankNumber}>{index + 1}</Text>
+                  <Text style={styles.rankNumber}>{getInitials(name)}</Text>
                 </View>
-                <Text style={styles.personName} numberOfLines={1}>
-                  {name}
-                </Text>
+                <View>
+                  <Text style={styles.personName} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  <Text style={styles.personCount}>
+                    {stats.count} transactions
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.personAmount, {color: '#10B981'}]}>
-                KSh {amount.toLocaleString('en-KE')}
+              <Text style={[styles.personAmount, { color: '#10B981' }]}>
+                KSh {stats.amount.toLocaleString('en-KE')}
               </Text>
             </View>
           ))}
@@ -406,7 +435,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
@@ -460,7 +489,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
@@ -495,9 +524,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   rankBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -509,18 +538,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1FAE5',
   },
   rankNumber: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#111827',
   },
   personName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#1F2937',
-    flex: 1,
+    marginBottom: 2,
+  },
+  personCount: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   personAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
   },
   emptyState: {
