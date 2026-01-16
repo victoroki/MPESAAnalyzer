@@ -1,7 +1,5 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-// @ts-ignore
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 interface MonthSelectorProps {
     selectedDate: Date;

@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   Dimensions,
   TouchableOpacity,
 } from 'react-native';
-import { LoadingContext } from '../contexts/LoadingContext';
+import { useLoading } from '../contexts/LoadingContext';
 import { PieChart } from 'react-native-chart-kit';
 import LinearGradient from 'react-native-linear-gradient';
 import {
@@ -19,10 +19,10 @@ import {
 } from '../utils/transactionHelpers';
 import MonthSelector from '../components/MonthSelector';
 
-const DashboardScreen = ({ transactions, onRefresh }) => {
+const DashboardScreen = ({ transactions = [], onRefresh }) => {
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const { showLoading, hideLoading } = useContext(LoadingContext);
+  const { showLoading, hideLoading } = useLoading();
 
   // Get current month statistics based on selectedDate
   const currentMonthStats = calculateMonthlyStats(
@@ -30,10 +30,10 @@ const DashboardScreen = ({ transactions, onRefresh }) => {
     selectedDate.getFullYear(),
     selectedDate.getMonth()
   );
-  
+
   console.log('[DEBUG] DashboardScreen transactions count:', transactions.length);
   console.log('[DEBUG] Current month stats:', currentMonthStats);
-  
+
   const handleRefresh = async () => {
     console.log('[DEBUG] Manual refresh triggered');
     if (onRefresh) {
@@ -306,7 +306,7 @@ const DashboardScreen = ({ transactions, onRefresh }) => {
                 absolute
                 hasLegend={true}
               />
-              
+
               <View style={styles.categoriesList}>
                 {topCategories.map((cat, index) => (
                   <View key={cat.category} style={styles.categoryRow}>
@@ -349,41 +349,41 @@ const DashboardScreen = ({ transactions, onRefresh }) => {
           )}
         </View>
 
-      {/* Quick Stats Grid */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionIcon}>⚡</Text>
-          <Text style={styles.sectionTitle}>Quick Stats</Text>
-        </View>
-        <View style={styles.statsGrid}>
-          <View style={styles.quickStatCard}>
-            <LinearGradient
-              colors={['#EEF2FF', '#E0E7FF']}
-              style={styles.quickStatGradient}
-            >
-              <Text style={styles.quickStatIcon}>📝</Text>
-              <Text style={styles.quickStatValue}>{displayStats.transactionCount}</Text>
-              <Text style={styles.quickStatLabel}>
-                {selectedPeriod === 'month' ? 'Monthly' : 'Total'} Transactions
-              </Text>
-            </LinearGradient>
+        {/* Quick Stats Grid */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionIcon}>⚡</Text>
+            <Text style={styles.sectionTitle}>Quick Stats</Text>
           </View>
+          <View style={styles.statsGrid}>
+            <View style={styles.quickStatCard}>
+              <LinearGradient
+                colors={['#EEF2FF', '#E0E7FF']}
+                style={styles.quickStatGradient}
+              >
+                <Text style={styles.quickStatIcon}>📝</Text>
+                <Text style={styles.quickStatValue}>{displayStats.transactionCount}</Text>
+                <Text style={styles.quickStatLabel}>
+                  {selectedPeriod === 'month' ? 'Monthly' : 'Total'} Transactions
+                </Text>
+              </LinearGradient>
+            </View>
 
-          <View style={styles.quickStatCard}>
-            <LinearGradient
-              colors={['#FEE2E2', '#FECACA']}
-              style={styles.quickStatGradient}
-            >
-              <Text style={styles.quickStatIcon}>💳</Text>
-              <Text style={styles.quickStatValue}>
-                {formatCurrency(dailyAverage)}
-              </Text>
-              <Text style={styles.quickStatLabel}>Daily Average</Text>
-            </LinearGradient>
+            <View style={styles.quickStatCard}>
+              <LinearGradient
+                colors={['#FEE2E2', '#FECACA']}
+                style={styles.quickStatGradient}
+              >
+                <Text style={styles.quickStatIcon}>💳</Text>
+                <Text style={styles.quickStatValue}>
+                  {formatCurrency(dailyAverage)}
+                </Text>
+                <Text style={styles.quickStatLabel}>Daily Average</Text>
+              </LinearGradient>
+            </View>
           </View>
         </View>
       </View>
-    </View>
     </ScrollView>
   );
 };

@@ -104,7 +104,9 @@ export const parseMPesaMessage = (message: string, timestamp: number): ParsedTra
         }
     }
 
-    console.log('[DEBUG] No pattern matched for message');
+    // If no pattern matched, log the message to help debug
+    console.log('[DEBUG] ⚠️ No pattern matched for M-Pesa message. First 200 chars:', message.substring(0, 200));
+    console.log('[DEBUG] Full message length:', message.length);
     return null;
 };
 

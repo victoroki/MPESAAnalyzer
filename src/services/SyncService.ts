@@ -25,7 +25,7 @@ class SyncService {
 
             const lastScanned = DatabaseService.getLastScannedTimestamp();
             console.log('[DEBUG] Last scanned timestamp:', lastScanned);
-            
+
             console.log('[DEBUG] Fetching messages');
             const newMessages = await this.fetchMessages(lastScanned);
             console.log('[DEBUG] Fetched messages count:', newMessages.length);
@@ -106,11 +106,18 @@ class SyncService {
     private fetchMessages(minDate: number): Promise<any[]> {
         console.log('[DEBUG] Fetching messages with minDate:', minDate);
         return new Promise((resolve, reject) => {
-            const filter = {
+            // Remove bodyRegex filter as it's too restrictive
+            // We'll filter for M-Pesa messages in code instead
+            const filter: any = {
                 box: 'inbox',
-                minDate: minDate > 0 ? minDate : undefined,
-                bodyRegex: '(M-PESA|MPESA)', // Filter for M-Pesa messages only
             };
+
+            // Only add minDate if it's greater than 0
+            // For first sync, fetch all messages (limited by default to recent messages)
+            if (minDate > 0) {
+                filter.minDate = minDate;
+            }
+
             console.log('[DEBUG] SMS filter:', filter);
 
             SmsAndroid.list(
@@ -127,9 +134,21 @@ class SyncService {
                 (count: number, smsList: string) => {
                     try {
                         console.log('[DEBUG] SMS list response - count:', count);
-                        const messages = JSON.parse(smsList);
-                        console.log('[DEBUG] Parsed messages count:', messages.length);
-                        resolve(messages);
+                        const allMessages = JSON.parse(smsList);
+                        console.log('[DEBUG] Parsed all messages count:', allMessages.length);
+
+                        // Filter for M-Pesa messages in code (case-insensitive)
+                        const mpesaMessages = allMessages.filter((msg: any) => {
+                            const body = msg.body || '';
+                            const isMpesa = /m-?pesa/i.test(body);
+                            if (isMpesa) {
+                                console.log('[DEBUG] Found M-Pesa message:', body.substring(0, 50) + '...');
+                            }
+                            return isMpesa;
+                        });
+
+                        console.log('[DEBUG] Filtered M-Pesa messages count:', mpesaMessages.length);
+                        resolve(mpesaMessages);
                     } catch (e) {
                         console.error('[DEBUG] Failed to parse SMS messages', e);
                         reject(new Error('Failed to parse SMS messages'));

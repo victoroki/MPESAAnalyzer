@@ -11,7 +11,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { format, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import DateRangePicker from '../components/DateRangePicker';
 
-const AnalyticsScreen = ({ transactions }) => {
+const AnalyticsScreen = ({ transactions = [] }) => {
   const [period, setPeriod] = useState('week');
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [endDate, setEndDate] = useState(new Date());

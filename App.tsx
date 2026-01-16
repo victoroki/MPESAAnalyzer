@@ -83,7 +83,7 @@ const AppContent = () => {
             tabBarLabel: 'Overview',
           }}
         >
-          {() => (<DashboardScreen transactions={transactions} onRefresh={readSMSMessages} />)}
+          {() => <DashboardScreen transactions={transactions} onRefresh={readSMSMessages} />}
         </Tab.Screen>
 
         <Tab.Screen
@@ -93,7 +93,7 @@ const AppContent = () => {
             tabBarLabel: 'Analytics',
           }}
         >
-          {() => (<AnalyticsScreen transactions={transactions} />)}
+          {() => <AnalyticsScreen transactions={transactions} />}
         </Tab.Screen>
 
         <Tab.Screen
@@ -103,7 +103,7 @@ const AppContent = () => {
             tabBarLabel: 'Transactions',
           }}
         >
-          {() => (<TransactionsScreen transactions={transactions} />)}
+          {() => <TransactionsScreen transactions={transactions} />}
         </Tab.Screen>
 
         <Tab.Screen
@@ -113,7 +113,7 @@ const AppContent = () => {
             tabBarLabel: 'Insights',
           }}
         >
-          {() => (<InsightsScreen transactions={transactions} />)}
+          {() => <InsightsScreen transactions={transactions} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>

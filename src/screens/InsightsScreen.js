@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
-const InsightsScreen = ({ transactions }) => {
+const InsightsScreen = ({ transactions = [] }) => {
   const generateInsights = () => {
     if (transactions.length === 0) return [];
 

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {format} from 'date-fns';
 
-const TransactionsScreen = ({transactions}) => {
+const TransactionsScreen = ({transactions = []}) => {
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
