@@ -59,7 +59,7 @@ class SyncService {
             console.log('[DEBUG] Processed transactions count:', transactions.length);
             if (transactions.length > 0) {
                 console.log('[DEBUG] Saving transactions to database');
-                DatabaseService.saveTransactions(transactions);
+                await DatabaseService.saveTransactions(transactions);
                 DatabaseService.setLastScannedTimestamp(maxTimestamp);
                 console.log('[DEBUG] Saved transactions and updated timestamp');
             }

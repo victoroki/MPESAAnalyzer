@@ -6,31 +6,15 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
+  StatusBar,
 } from 'react-native';
-import { LineChart, BarChart } from 'react-native-chart-kit';
-import { format, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import DateRangePicker from '../components/DateRangePicker';
+import { LineChart } from 'react-native-chart-kit';
+import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const AnalyticsScreen = ({ transactions = [] }) => {
   const [period, setPeriod] = useState('week');
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [endDate, setEndDate] = useState(new Date());
-
-  const handleDateRangeChange = (newStartDate, newEndDate) => {
-    setStartDate(newStartDate);
-    setEndDate(newEndDate);
-  };
-
-  // Calculate spending within date range
-  const dateRangeSpending = useMemo(() => {
-    return transactions
-      .filter(t => {
-        const tDate = new Date(t.date);
-        return isWithinInterval(tDate, { start: startDate, end: endDate });
-      })
-      .filter(t => t.type === 'sent' || t.type === 'payment' || t.type === 'withdrawal')
-      .reduce((sum, t) => sum + t.amount, 0);
-  }, [transactions, startDate, endDate]);
 
   const getPeriodData = () => {
     const now = new Date();
@@ -57,7 +41,15 @@ const AnalyticsScreen = ({ transactions = [] }) => {
         .filter(t => t.type === 'received')
         .reduce((sum, t) => sum + t.amount, 0);
 
-      labels.push(format(date, period === 'week' ? 'EEE' : 'dd'));
+      // Add labels at intervals
+      if (period === 'week') {
+        labels.push(format(date, 'EEE'));
+      } else if (period === 'month' && i % 5 === 0) {
+        labels.push(format(date, 'dd'));
+      } else if (period === 'year' && i % 30 === 0) {
+        labels.push(format(date, 'MMM'));
+      }
+
       spentData.push(spent);
       receivedData.push(received);
     }
@@ -65,545 +57,570 @@ const AnalyticsScreen = ({ transactions = [] }) => {
     return { labels, spentData, receivedData };
   };
 
-  const getCategoryData = () => {
+  const categorySpending = useMemo(() => {
     const categories = {};
     transactions
       .filter(t => t.type !== 'received' && t.category)
       .forEach(t => {
-        const cat = t.category || 'Other';
-        categories[cat] = (categories[cat] || 0) + t.amount;
+        categories[t.category] = (categories[t.category] || 0) + t.amount;
       });
-
-    // Sort by amount and take top 5 categories to avoid overlap
-    const sortedCategories = Object.entries(categories)
+    return Object.entries(categories)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
+  }, [transactions]);
+
+  // All-time top recipients (people you send money to)
+  const topRecipients = useMemo(() => {
+    const recipients = {};
+    transactions
+      .filter(t => (t.type === 'sent' || t.type === 'payment') && t.recipient)
+      .forEach(t => {
+        if (!recipients[t.recipient]) {
+          recipients[t.recipient] = { amount: 0, count: 0 };
+        }
+        recipients[t.recipient].amount += t.amount;
+        recipients[t.recipient].count += 1;
+      });
+    return Object.entries(recipients)
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .slice(0, 3);
+  }, [transactions]);
+
+  // All-time top senders (people you receive money from)
+  const topSenders = useMemo(() => {
+    const senders = {};
+    transactions
+      .filter(t => t.type === 'received' && t.sender)
+      .forEach(t => {
+        if (!senders[t.sender]) {
+          senders[t.sender] = { amount: 0, count: 0 };
+        }
+        senders[t.sender].amount += t.amount;
+        senders[t.sender].count += 1;
+      });
+    return Object.entries(senders)
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .slice(0, 3);
+  }, [transactions]);
+
+  const periodData = getPeriodData();
+  const maxSpending = Math.max(...categorySpending.map(([_, amount]) => amount), 1);
+
+  const totalSpentInPeriod = periodData.spentData.reduce((sum, val) => sum + val, 0);
+  const totalReceivedInPeriod = periodData.receivedData.reduce((sum, val) => sum + val, 0);
+  const changePercentage = totalReceivedInPeriod > 0
+    ? ((totalSpentInPeriod / totalReceivedInPeriod) * 100).toFixed(0)
+    : 0;
+
+  const getInitials = (name) => {
+    return name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+  };
+
+  const getDateRange = () => {
+    const now = new Date();
+    let startDate;
+
+    if (period === 'week') {
+      startDate = subDays(now, 6);
+    } else if (period === 'month') {
+      startDate = subDays(now, 29);
+    } else {
+      startDate = subDays(now, 364);
+    }
 
     return {
-      labels: sortedCategories.map(([label]) => label),
-      data: sortedCategories.map(([, value]) => value),
+      from: format(startDate, 'MMM dd, yyyy'),
+      to: format(now, 'MMM dd, yyyy')
     };
   };
 
-  const getTopPeople = () => {
-    const people = { received: {}, sent: {} };
-
-    transactions.forEach(t => {
-      if (t.type === 'received' && t.sender) {
-        if (!people.received[t.sender]) {
-          people.received[t.sender] = { amount: 0, count: 0 };
-        }
-        people.received[t.sender].amount += t.amount;
-        people.received[t.sender].count += 1;
-      }
-      if ((t.type === 'sent' || t.type === 'payment') && t.recipient) {
-        if (!people.sent[t.recipient]) {
-          people.sent[t.recipient] = { amount: 0, count: 0 };
-        }
-        people.sent[t.recipient].amount += t.amount;
-        people.sent[t.recipient].count += 1;
-      }
-    });
-
-    const topReceivers = Object.entries(people.sent)
-      .sort((a, b) => b[1].amount - a[1].amount)
-      .slice(0, 5);
-
-    const topSenders = Object.entries(people.received)
-      .sort((a, b) => b[1].amount - a[1].amount)
-      .slice(0, 5);
-
-    return { topReceivers, topSenders };
-  };
-
-  const periodData = getPeriodData();
-  const categoryData = getCategoryData();
-  const peopleData = getTopPeople();
-
-  const screenWidth = Dimensions.get('window').width;
-
-  // Helper to get initials
-  const getInitials = (name) => {
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  const chartConfig = {
-    backgroundColor: '#ffffff',
-    backgroundGradientFrom: '#ffffff',
-    backgroundGradientTo: '#ffffff',
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(79, 70, 229, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-    style: { borderRadius: 16 },
-    propsForDots: { r: '6', strokeWidth: '3', stroke: '#4F46E5' },
-    propsForBackgroundLines: {
-      strokeDasharray: '',
-      stroke: '#E5E7EB',
-      strokeWidth: 1,
-    },
-    strokeWidth: 3,
-    barPercentage: 0.7,
-    useShadowColorFromDataset: false,
-  };
+  const dateRange = getDateRange();
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Period Selector */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Analytics</Text>
-        <View style={styles.periodSelector}>
-          {['week', 'month', 'year'].map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodButton, period === p && styles.periodButtonActive]}
-              onPress={() => setPeriod(p)}>
-              <Text style={[styles.periodText, period === p && styles.periodTextActive]}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+    <View style={styles.mainContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Analytics</Text>
 
-      {/* Date Range Picker */}
-      <DateRangePicker
-        startDate={startDate}
-        endDate={endDate}
-        onDateRangeChange={handleDateRangeChange}
-      />
-
-      {/* Date Range Spending Summary */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Spending in Selected Range</Text>
-        <Text style={styles.summaryAmount}>KSh {dateRangeSpending.toLocaleString('en-KE')}</Text>
-        <Text style={styles.summaryPeriod}>
-          {format(startDate, 'MMM dd, yyyy')} - {format(endDate, 'MMM dd, yyyy')}
-        </Text>
-      </View>
-
-      {/* Spending vs Income Chart */}
-      <View style={styles.chartCard}>
-        <View style={styles.chartHeader}>
-          <Text style={styles.chartTitle}>Cash Flow</Text>
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-              <Text style={styles.legendText}>Income</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-              <Text style={styles.legendText}>Spending</Text>
-            </View>
+          {/* Custom Pill Selector */}
+          <View style={styles.periodSelector}>
+            {['week', 'month', 'year'].map((p) => (
+              <TouchableOpacity
+                key={p}
+                onPress={() => setPeriod(p)}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+              >
+                <Text style={[styles.periodBtnText, period === p && styles.periodBtnTextActive]}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
-        <View style={styles.chartContainer}>
+
+        {/* Date Range Card */}
+        <View style={styles.dateRangeCard}>
+          <View style={styles.dateColumn}>
+            <Text style={styles.dateLabel}>FROM</Text>
+            <Text style={styles.dateValue}>{dateRange.from}</Text>
+          </View>
+          <View style={styles.arrowIcon}>
+            <Text style={styles.arrowText}>→</Text>
+          </View>
+          <View style={styles.dateColumn}>
+            <Text style={styles.dateLabel}>TO</Text>
+            <Text style={styles.dateValue}>{dateRange.to}</Text>
+          </View>
+        </View>
+
+        {/* Spending Chart Card */}
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeader}>
+            <View>
+              <Text style={styles.chartLabel}>Spending in Range</Text>
+              <Text style={styles.chartAmount}>
+                KSh {totalSpentInPeriod.toLocaleString('en-KE', { minimumFractionDigits: 0 })}
+              </Text>
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
+                  <Text style={styles.legendText}>Income</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
+                  <Text style={styles.legendText}>Spending</Text>
+                </View>
+              </View>
+            </View>
+            {totalReceivedInPeriod > 0 && (
+              <View style={styles.growthBadge}>
+                <Text style={styles.growthText}>📊 {changePercentage}%</Text>
+              </View>
+            )}
+          </View>
+
           <LineChart
             data={{
               labels: periodData.labels,
               datasets: [
                 {
-                  data: periodData.receivedData.length > 0 ? periodData.receivedData : [0],
-                  color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                  strokeWidth: 3,
+                  data: periodData.spentData.length > 0 ? periodData.spentData : [0, 0, 0],
+                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`, // Red for spending
+                  strokeWidth: 2
                 },
                 {
-                  data: periodData.spentData.length > 0 ? periodData.spentData : [0],
-                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                  strokeWidth: 3,
-                },
+                  data: periodData.receivedData.length > 0 ? periodData.receivedData : [0, 0, 0],
+                  color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`, // Green for income
+                  strokeWidth: 2
+                }
               ],
+              legend: ['Spending', 'Income']
             }}
-            width={screenWidth - 64}
-            height={250}
+            width={SCREEN_WIDTH - 40}
+            height={220}
             chartConfig={{
-              ...chartConfig,
-              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-              strokeWidth: 2,
-              barPercentage: 0.5,
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#ffffff',
+              backgroundGradientTo: '#ffffff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`, // Default axis label color
+              labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
+              style: { borderRadius: 16 },
+              propsForDots: { r: '4', strokeWidth: '0' }
             }}
             bezier
-            style={styles.chart}
-            withVerticalLabels={true}
-            withHorizontalLabels={true}
-            withInnerLines={true}
-            withOuterLines={false}
             withVerticalLines={false}
             withHorizontalLines={true}
-            segments={5}
-            yAxisLabel="KSh"
-            yAxisSuffix=""
-            withScrollableDot={false}
-            onDataPointClick={(data) => {
-              console.log('Data point clicked:', data);
-            }}
+            style={styles.lineChart}
           />
         </View>
-      </View>
 
-      {/* Category Spending Chart */}
-      {categoryData.labels.length > 0 && (
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Top 5 Categories</Text>
-          <View style={styles.chartContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <BarChart
-                data={{
-                  labels: categoryData.labels.map(label => {
-                    // Truncate long labels and add line breaks for better spacing
-                    if (label.length > 8) {
-                      return label.substring(0, 8) + '...';
-                    }
-                    return label;
-                  }),
-                  datasets: [
-                    {
-                      data: categoryData.data,
-                      colors: [
-                        () => '#10B981',
-                        () => '#3B82F6',
-                        () => '#8B5CF6',
-                        () => '#F59E0B',
-                        () => '#EF4444',
-                      ]
-                    }
-                  ],
-                }}
-                width={Math.max(screenWidth - 64, categoryData.labels.length * 80)}
-                height={250}
-                chartConfig={{
-                  ...chartConfig,
-                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                  barPercentage: 0.6,
-                  strokeWidth: 2,
-                }}
-                style={styles.chart}
-                showValuesOnTopOfBars={true}
-                withInnerLines={true}
-                segments={5}
-                fromZero={true}
-                yAxisLabel="KSh "
-                yAxisSuffix=""
-                withCustomBarColorFromData={true}
-                flatColor={true}
-              />
-            </ScrollView>
+        {/* Top 5 Categories */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionIcon}>📊</Text>
+            <Text style={styles.sectionTitle}>Top 5 Categories</Text>
           </View>
-        </View>
-      )}
-
-      {/* Top Money Receivers */}
-      {peopleData.topReceivers.length > 0 && (
-        <View style={styles.listCard}>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Top Recipients</Text>
-            <Text style={styles.listSubtitle}>People you send money to most</Text>
-          </View>
-          {peopleData.topReceivers.map(([name, stats], index) => (
-            <View key={name} style={styles.personRow}>
-              <View style={styles.personLeft}>
-                <View style={[styles.rankBadge, styles.spentBadge]}>
-                  <Text style={styles.rankNumber}>{getInitials(name)}</Text>
+          {categorySpending.length > 0 ? (
+            categorySpending.map(([name, amount], i) => (
+              <View key={name} style={styles.categoryRow}>
+                <View style={styles.categoryInfo}>
+                  <Text style={styles.categoryName}>{name}</Text>
+                  <Text style={styles.categoryAmount}>KSh {amount.toLocaleString()}</Text>
                 </View>
-                <View>
-                  <Text style={styles.personName} numberOfLines={1}>
-                    {name}
-                  </Text>
-                  <Text style={styles.personCount}>
-                    {stats.count} transactions
-                  </Text>
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarFill, {
+                    width: `${(amount / maxSpending) * 100}%`,
+                    backgroundColor: i === 0 ? '#10B981' : i === 1 ? '#6366F1' : '#F59E0B'
+                  }]} />
                 </View>
               </View>
-              <Text style={[styles.personAmount, { color: '#EF4444' }]}>
-                KSh {stats.amount.toLocaleString('en-KE')}
-              </Text>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No category data available</Text>
             </View>
-          ))}
+          )}
         </View>
-      )}
 
-      {/* Top Money Senders */}
-      {peopleData.topSenders.length > 0 && (
-        <View style={[styles.listCard, { marginBottom: 24 }]}>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Top Senders</Text>
-            <Text style={styles.listSubtitle}>People who send you money most</Text>
-          </View>
-          {peopleData.topSenders.map(([name, stats], index) => (
-            <View key={name} style={styles.personRow}>
-              <View style={styles.personLeft}>
-                <View style={[styles.rankBadge, styles.incomeBadge]}>
-                  <Text style={styles.rankNumber}>{getInitials(name)}</Text>
+        {/* Top Recipients - People You Send To */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitleLarge}>Top Recipients</Text>
+          <Text style={styles.sectionSubtitle}>People you send money to most (All-time)</Text>
+
+          {topRecipients.length > 0 ? (
+            topRecipients.map(([name, stats], index) => (
+              <View key={name} style={styles.recipientRow}>
+                <View style={[styles.avatar, { backgroundColor: '#FEE2E2' }]}>
+                  <Text style={styles.avatarText}>{getInitials(name)}</Text>
                 </View>
-                <View>
-                  <Text style={styles.personName} numberOfLines={1}>
-                    {name}
+                <View style={styles.recipientInfo}>
+                  <Text style={styles.recipientName}>{name}</Text>
+                  <View style={styles.barContainer}>
+                    <View style={[styles.barFill, { 
+                      width: `${(stats.amount / topRecipients[0][1].amount) * 100}%`,
+                      backgroundColor: '#EF4444'
+                    }]} />
+                  </View>
+                  <Text style={styles.recipientSub}>
+                    {stats.count} transaction{stats.count > 1 ? 's' : ''}
                   </Text>
-                  <Text style={styles.personCount}>
-                    {stats.count} transactions
-                  </Text>
+                </View>
+                <View style={styles.amountContainer}>
+                  <Text style={styles.recipientAmount}>KSh {stats.amount.toLocaleString()}</Text>
+                  <Text style={styles.sentLabel}>Sent</Text>
                 </View>
               </View>
-              <Text style={[styles.personAmount, { color: '#10B981' }]}>
-                KSh {stats.amount.toLocaleString('en-KE')}
-              </Text>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No recipient data available</Text>
             </View>
-          ))}
+          )}
         </View>
-      )}
 
-      {/* Empty State */}
-      {peopleData.topReceivers.length === 0 && peopleData.topSenders.length === 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No transaction data yet</Text>
-          <Text style={styles.emptySubtext}>
-            Your M-Pesa transaction analytics will appear here
-          </Text>
+        {/* Top Senders - People You Receive From */}
+        <View style={[styles.sectionCard, { marginBottom: 100 }]}>
+          <Text style={styles.sectionTitleLarge}>Top Senders</Text>
+          <Text style={styles.sectionSubtitle}>People who send you money most (All-time)</Text>
+
+          {topSenders.length > 0 ? (
+            topSenders.map(([name, stats]) => (
+              <View key={name} style={styles.recipientRow}>
+                <View style={[styles.avatar, { backgroundColor: '#D1FAE5' }]}>
+                  <Text style={[styles.avatarText, { color: '#10B981' }]}>{getInitials(name)}</Text>
+                </View>
+                <View style={styles.recipientInfo}>
+                  <Text style={styles.recipientName}>{name}</Text>
+                  <View style={styles.barContainer}>
+                    <View style={[styles.barFill, { 
+                      width: `${(stats.amount / topSenders[0][1].amount) * 100}%`,
+                      backgroundColor: '#10B981'
+                    }]} />
+                  </View>
+                  <Text style={styles.recipientSub}>
+                    {stats.count} transaction{stats.count > 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <View style={styles.amountContainer}>
+                  <Text style={[styles.recipientAmount, { color: '#10B981' }]}>KSh {stats.amount.toLocaleString()}</Text>
+                  <Text style={styles.receivedLabel}>Received</Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No sender data available</Text>
+            </View>
+          )}
         </View>
-      )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  mainContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
   header: {
-    backgroundColor: '#fff',
-    paddingTop: 24,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    paddingHorizontal: 25,
+    paddingTop: 20,
+    marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#111827',
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
     marginBottom: 20,
-    letterSpacing: -0.5,
   },
   periodSelector: {
     flexDirection: 'row',
-    gap: 12,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 15,
+    padding: 5,
   },
-  periodButton: {
+  periodBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    paddingVertical: 10,
     alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    borderRadius: 12,
   },
-  periodButtonActive: {
-    backgroundColor: '#4F46E5',
-    elevation: 2,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  periodBtnActive: {
+    backgroundColor: '#6366F1',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  periodText: {
-    fontSize: 16,
+  periodBtnText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
-  periodTextActive: {
-    color: '#fff',
+  periodBtnTextActive: {
+    color: '#FFFFFF',
   },
-  chartCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 24,
+  dateRangeCard: {
+    marginHorizontal: 25,
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dateColumn: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  dateValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  arrowIcon: {
+    paddingHorizontal: 15,
+  },
+  arrowText: {
+    fontSize: 20,
+    color: '#CBD5E1',
+  },
+  chartCard: {
+    marginHorizontal: 25,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
   },
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
-  chartTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
-    letterSpacing: -0.5,
+  chartLabel: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 5,
   },
-  legend: {
+  chartAmount: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  legendRow: {
     flexDirection: 'row',
-    gap: 20,
+    marginTop: 10,
+    gap: 15,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
   legendDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   legendText: {
-    fontSize: 14,
-    color: '#4B5563',
-    fontWeight: '600',
+    fontSize: 12,
+    color: '#64748B',
   },
-  chart: {
-    marginVertical: 12,
-    borderRadius: 16,
-    overflow: 'hidden',
+  growthBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
-  chartContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 10,
+  growthText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EF4444',
   },
-  listCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 24,
-    borderRadius: 20,
-    padding: 20,
+  lineChart: {
+    marginRight: -10,
+    marginLeft: -10,
+  },
+  sectionCard: {
+    marginHorizontal: 25,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 25,
+    padding: 25,
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
   },
-  listHeader: {
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 20,
   },
-  listTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 6,
-    letterSpacing: -0.5,
-  },
-  listSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  personRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  personLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 16,
-  },
-  rankBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  spentBadge: {
-    backgroundColor: '#FEE2E2',
-  },
-  incomeBadge: {
-    backgroundColor: '#D1FAE5',
-  },
-  rankNumber: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  personName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 2,
-  },
-  personCount: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  personAmount: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
+  sectionIcon: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
+    color: '#6366F1',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  categoryRow: {
+    marginBottom: 15,
+  },
+  categoryInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  emptySubtext: {
+  categoryName: {
     fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-  },
-  summaryCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 24,
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    color: '#6B7280',
     fontWeight: '600',
-    marginBottom: 12,
+    color: '#0F172A',
   },
-  summaryAmount: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#EF4444',
-    marginBottom: 12,
-    letterSpacing: -1,
-  },
-  summaryPeriod: {
+  categoryAmount: {
     fontSize: 14,
-    color: '#9CA3AF',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 3,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  sectionTitleLarge: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 5,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 20,
+  },
+  recipientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  recipientInfo: {
+    flex: 1,
+  },
+  recipientName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  recipientSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  barContainer: {
+    height: 4,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 2,
+    marginVertical: 4,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  recipientAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  amountContainer: {
+    alignItems: 'flex-end',
+  },
+  sentLabel: {
+    fontSize: 10,
+    color: '#EF4444',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  receivedLabel: {
+    fontSize: 10,
+    color: '#10B981',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  emptyState: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#94A3B8',
   },
 });
 

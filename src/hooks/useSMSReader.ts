@@ -10,7 +10,7 @@ const useSMSReader = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadCachedTransactions = useCallback(() => {
-    const cached = DatabaseService.getTransactions(50);
+    const cached = DatabaseService.getAllTransactions();
     setTransactions(cached);
   }, []);
 
@@ -19,7 +19,7 @@ const useSMSReader = () => {
       console.log('[DEBUG] Starting SMS reading process');
       setIsRefreshing(true);
       setError(null); // Clear previous errors
-      
+
       // 1. Show cached data immediately (Instant UI)
       loadCachedTransactions();
 
