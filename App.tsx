@@ -1,289 +1,160 @@
-import React, { useState, useEffect } from 'react';
-import {
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  PermissionsAndroid,
-  Platform,
-  Alert,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, StatusBar, Alert, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { LayoutDashboard, BarChart3, List, Lightbulb, Sparkles } from 'lucide-react-native';
 
 import DashboardScreen from './src/screens/DashboardScreen';
-import TransactionsScreen from './src/screens/TransactionsScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
+import TransactionsScreen from './src/screens/TransactionsScreen';
 import InsightsScreen from './src/screens/InsightsScreen';
-import SmsAndroid from 'react-native-get-sms-android';
+import AIAssistantScreen from './src/screens/AIAssistantScreen';
 
-
-interface Transaction {
-  id: string;
-  type: 'sent' | 'received' | 'payment' | 'withdrawal' | 'unknown';
-  amount: number;
-  recipient: string;
-  sender: string;
-  balance: number;
-  transactionCode: string;
-  date: string;
-  rawMessage: string;
-  category: string;
-}
-
-interface SMSMessage {
-  _id: string;
-  body: string;
-  date: string;
-  address: string;
-}
+import { LoadingProvider } from './src/contexts/LoadingContext';
+import useSMSReader from './src/hooks/useSMSReader';
 
 const Tab = createBottomTabNavigator();
 
-const App = (): React.JSX.Element => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hasPermission, setHasPermission] = useState<boolean>(false);
+const AppContent = () => {
+  const { transactions, loading, error, readSMSMessages } = useSMSReader();
+  const [retryCount, setRetryCount] = useState(0);
 
+  // Initial load
   useEffect(() => {
-    requestSMSPermission();
-  }, []);
+    readSMSMessages();
+  }, [retryCount]);
 
-  const requestSMSPermission = async (): Promise<void> => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_SMS,
+  // Handle error display
+  useEffect(() => {
+    if (error) {
+      Alert.alert(
+        'Error Reading Transactions',
+        error.includes('permission')
+          ? 'Please grant SMS permission to read your M-Pesa transactions. You can enable this in Settings > Apps > MPESA Analyzer > Permissions.'
+          : error,
+        [
           {
-            title: 'SMS Permission',
-            message:
-              'This app needs access to your SMS to analyze MPESA transactions',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
+            text: 'Retry',
+            onPress: () => {
+              setRetryCount(prev => prev + 1);
+            }
           },
-        );
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          setHasPermission(true);
-          loadTransactions();
-        } else {
-          Alert.alert(
-            'Permission Denied',
-            'SMS permission is required to analyze transactions',
-          );
-        }
-      } catch (err) {
-        console.warn(err);
-      }
-    }
-  };
-
-  const loadTransactions = (): void => {
-    if (Platform.OS === 'android') {
-      const filter = {
-        box: 'inbox',
-        indexFrom: 0, 
-        maxCount: 1000,
-      };
-
-      SmsAndroid.list(
-        JSON.stringify(filter),
-        (fail: string) => {
-          console.log('Failed to load SMS:', fail);
-        },
-        (count: number, smsList: string) => {
-          const messages: SMSMessage[] = JSON.parse(smsList);
-
-          const mpesaMessages = messages.filter(
-            msg => msg.address && msg.address.toUpperCase().includes('MPESA')
-          );
-
-          const parsedTransactions = mpesaMessages
-            .map(msg => parseMPESAMessage(msg))
-            .filter((t): t is Transaction => t !== null);
-
-          setTransactions(parsedTransactions);
-          saveTransactions(parsedTransactions);
-        },
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
       );
     }
-  };
-
-  const parseMPESAMessage = (sms: SMSMessage): Transaction | null => {
-    const text = sms.body;
-    const date = new Date(parseInt(sms.date));
-
-    let type: Transaction['type'] = 'unknown';
-    let amount = 0;
-    let recipient = '';
-    let sender = '';
-    let balance = 0;
-    let transactionCode = '';
-
-    // Sent money pattern
-    const sentPattern = /([A-Z0-9]+) Confirmed\. Ksh([\d,]+\.\d{2}) sent to (.+?) on/i;
-    const sentMatch = text.match(sentPattern);
-
-    if (sentMatch) {
-      type = 'sent';
-      transactionCode = sentMatch[1];
-      amount = parseFloat(sentMatch[2].replace(/,/g, ''));
-      recipient = sentMatch[3];
-    }
-
-    const receivedPattern = /([A-Z0-9]+) Confirmed\. You have received Ksh([\d,]+\.\d{2}) from (.+?) on/i;
-    const receivedMatch = text.match(receivedPattern);
-
-    if (receivedMatch) {
-      type = 'received';
-      transactionCode = receivedMatch[1];
-      amount = parseFloat(receivedMatch[2].replace(/,/g, ''));
-      sender = receivedMatch[3];
-    }
-
-    const paidPattern = /([A-Z0-9]+) Confirmed\. Ksh([\d,]+\.\d{2}) paid to (.+?)\./i;
-    const paidMatch = text.match(paidPattern);
-
-    if (paidMatch) {
-      type = 'payment';
-      transactionCode = paidMatch[1];
-      amount = parseFloat(paidMatch[2].replace(/,/g, ''));
-      recipient = paidMatch[3];
-    }
-
-    const balancePattern = /New M-PESA balance is Ksh([\d,]+\.\d{2})/i;
-    const balanceMatch = text.match(balancePattern);
-
-    if (balanceMatch) {
-      balance = parseFloat(balanceMatch[1].replace(/,/g, ''));
-    }
-
-    const withdrawPattern = /([A-Z0-9]+) Confirmed\. Ksh([\d,]+\.\d{2}) withdrawn from/i;
-    const withdrawMatch = text.match(withdrawPattern);
-
-    if (withdrawMatch) {
-      type = 'withdrawal';
-      transactionCode = withdrawMatch[1];
-      amount = parseFloat(withdrawMatch[2].replace(/,/g, ''));
-    }
-
-    if (type === 'unknown' || amount === 0) return null;
-
-    return {
-      id: sms._id,
-      type,
-      amount,
-      recipient,
-      sender,
-      balance,
-      transactionCode,
-      date: date.toISOString(),
-      rawMessage: text,
-      category: categorizeTransaction(type, recipient),
-    };
-  };
-
-  const categorizeTransaction = (type: string, name: string): string => {
-    if (type === 'received') return 'Income';
-    if (type === 'withdrawal') return 'Cash';
-
-    const lower = name.toLowerCase();
-
-    if (
-      lower.includes('shop') ||
-      lower.includes('store') ||
-      lower.includes('supermarket')
-    )
-      return 'Shopping';
-    if (
-      lower.includes('restaurant') ||
-      lower.includes('food') ||
-      lower.includes('cafe')
-    )
-      return 'Food';
-    if (
-      lower.includes('fuel') ||
-      lower.includes('petrol') ||
-      lower.includes('gas')
-    )
-      return 'Transport';
-    if (
-      lower.includes('hospital') ||
-      lower.includes('clinic') ||
-      lower.includes('pharmacy')
-    )
-      return 'Health';
-    if (
-      lower.includes('electric') ||
-      lower.includes('water') ||
-      lower.includes('rent')
-    )
-      return 'Bills';
-    if (
-      lower.includes('school') ||
-      lower.includes('college') ||
-      lower.includes('university')
-    )
-      return 'Education';
-
-    return 'Other';
-  };
-
-  const saveTransactions = async (data: Transaction[]): Promise<void> => {
-    try {
-      await AsyncStorage.setItem('transactions', JSON.stringify(data));
-    } catch (e) {
-      console.log('Error saving transactions:', e);
-    }
-  };
+  }, [error]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#6366F1" />
-      <NavigationContainer>
-        <Tab.Navigator
-          screenOptions={{
-            tabBarActiveTintColor: '#6366F1',
-            tabBarInactiveTintColor: '#9CA3AF',
-            tabBarStyle: styles.tabBar,
-            headerStyle: { backgroundColor: '#6366F1' },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontWeight: 'bold' },
-          }}>
-          <Tab.Screen
-            name="Dashboard"
-            options={{ tabBarLabel: 'Home' }}>
-            {props => <DashboardScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-          <Tab.Screen
-            name="Transactions"
-            options={{ tabBarLabel: 'Transactions' }}>
-            {props => <TransactionsScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-          <Tab.Screen
-            name="Analytics"
-            options={{ tabBarLabel: 'Analytics' }}>
-            {props => <AnalyticsScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-          <Tab.Screen
-            name="Insights"
-            options={{ tabBarLabel: 'Insights' }}>
-            {props => <InsightsScreen {...props} transactions={transactions} />}
-          </Tab.Screen>
-        </Tab.Navigator>
-      </NavigationContainer>
-    </SafeAreaView>
+    <NavigationContainer>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: '#ffffff',
+            borderTopWidth: 0,
+            height: 70,
+            paddingBottom: 15,
+            paddingTop: 10,
+            elevation: 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -10 },
+            shadowOpacity: 0.1,
+            shadowRadius: 10,
+            borderTopLeftRadius: 30,
+            borderTopRightRadius: 30,
+            position: 'absolute',
+          },
+          tabBarActiveTintColor: '#6366F1',
+          tabBarInactiveTintColor: '#94A3B8',
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '700',
+            marginTop: 4,
+            letterSpacing: 0.5,
+          },
+        }}
+      >
+        <Tab.Screen
+          name="Dashboard"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused && styles.activeTabIcon}>
+                <LayoutDashboard color={color} size={22} />
+              </View>
+            ),
+            tabBarLabel: 'Home',
+          }}
+        >
+          {() => <DashboardScreen transactions={transactions} onRefresh={readSMSMessages} />}
+        </Tab.Screen>
+
+        <Tab.Screen
+          name="Analytics"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused && styles.activeTabIcon}>
+                <BarChart3 color={color} size={22} />
+              </View>
+            ),
+            tabBarLabel: 'Analysis',
+          }}
+        >
+          {() => <AnalyticsScreen transactions={transactions} />}
+        </Tab.Screen>
+
+        <Tab.Screen
+          name="Transactions"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused && styles.activeTabIcon}>
+                <List color={color} size={22} />
+              </View>
+            ),
+            tabBarLabel: 'History',
+          }}
+        >
+          {() => <TransactionsScreen transactions={transactions} />}
+        </Tab.Screen>
+
+        <Tab.Screen
+          name="AI Assistant"
+          options={{
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused && styles.activeTabIcon}>
+                <Sparkles color={color} size={22} />
+              </View>
+            ),
+            tabBarLabel: 'AI Assistant',
+          }}
+        >
+          {() => <AIAssistantScreen />}
+        </Tab.Screen>
+      </Tab.Navigator>
+    </NavigationContainer>
+  );
+};
+
+const App = () => {
+  return (
+    <SafeAreaProvider>
+      <LoadingProvider>
+        <AppContent />
+      </LoadingProvider>
+    </SafeAreaProvider>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  tabBar: {
-    height: 60,
-    paddingBottom: 8,
-    paddingTop: 8,
+  activeTabIcon: {
+    padding: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
   },
 });
 

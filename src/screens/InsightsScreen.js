@@ -1,13 +1,13 @@
 import React from 'react';
-import {View, Text, ScrollView, StyleSheet} from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
-const InsightsScreen = ({transactions}) => {
+const InsightsScreen = ({ transactions = [] }) => {
   const generateInsights = () => {
     if (transactions.length === 0) return [];
 
     const insights = [];
-    
+
     const spending = transactions
       .filter(t => t.type === 'sent' || t.type === 'payment' || t.type === 'withdrawal')
       .reduce((sum, t) => sum + t.amount, 0);
@@ -118,6 +118,70 @@ const InsightsScreen = ({transactions}) => {
       });
     }
 
+    // Biggest Purchase
+    const biggestPurchase = transactions
+      .filter(t => t.type === 'sent' || t.type === 'payment')
+      .sort((a, b) => b.amount - a.amount)[0];
+
+    if (biggestPurchase) {
+      insights.push({
+        type: 'warning',
+        icon: '💸',
+        title: 'Biggest Purchase',
+        message: `Your biggest spend was KSh ${biggestPurchase.amount.toLocaleString('en-KE')} to ${biggestPurchase.recipient || 'Unknown'} on ${new Date(biggestPurchase.date).toLocaleDateString()}.`,
+      });
+    }
+
+    // Day you spend the most
+    const daySpending = {};
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    transactions
+      .filter(t => t.type === 'sent' || t.type === 'payment')
+      .forEach(t => {
+        const day = days[new Date(t.date).getDay()];
+        daySpending[day] = (daySpending[day] || 0) + t.amount;
+      });
+
+    const peakDay = Object.entries(daySpending).sort((a, b) => b[1] - a[1])[0];
+    if (peakDay) {
+      insights.push({
+        type: 'info',
+        icon: '📅',
+        title: 'Peak Spending Day',
+        message: `You tend to spend the most on ${peakDay[0]}s. Total spent on this day: KSh ${peakDay[1].toLocaleString('en-KE')}.`,
+      });
+    }
+
+    // Weekly Comparison
+    const now = new Date();
+    const startOfThisWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    const startOfLastWeek = new Date(startOfThisWeek.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const thisWeekSpending = transactions
+      .filter(t => {
+        const d = new Date(t.date);
+        return d >= startOfThisWeek && (t.type === 'sent' || t.type === 'payment');
+      })
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const lastWeekSpending = transactions
+      .filter(t => {
+        const d = new Date(t.date);
+        return d >= startOfLastWeek && d < startOfThisWeek && (t.type === 'sent' || t.type === 'payment');
+      })
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    if (lastWeekSpending > 0) {
+      const change = ((thisWeekSpending - lastWeekSpending) / lastWeekSpending) * 100;
+      const isIncrease = change > 0;
+      insights.push({
+        type: isIncrease ? 'warning' : 'positive',
+        icon: isIncrease ? '📈' : '📉',
+        title: 'Weekly Comparison',
+        message: `Your spending is ${isIncrease ? 'up' : 'down'} ${Math.abs(change).toFixed(1)}% compared to last week.`,
+      });
+    }
+
     return insights;
   };
 
@@ -159,8 +223,8 @@ const InsightsScreen = ({transactions}) => {
             <LinearGradient
               colors={getGradientColors(insight.type)}
               style={styles.insightHeader}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 0}}>
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}>
               <Text style={styles.insightIcon}>{insight.icon}</Text>
               <Text style={styles.insightTitle}>{insight.title}</Text>
             </LinearGradient>
@@ -173,7 +237,7 @@ const InsightsScreen = ({transactions}) => {
 
       <View style={styles.tipsSection}>
         <Text style={styles.tipsTitle}>💰 Money-Saving Tips</Text>
-        
+
         <View style={styles.tipCard}>
           <Text style={styles.tipNumber}>1</Text>
           <View style={styles.tipContent}>
@@ -275,7 +339,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#fff',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
@@ -320,7 +384,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
